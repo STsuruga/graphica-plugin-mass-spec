@@ -1,0 +1,3 @@
+# テストの依存。Graphica 本体は別に入れる: pip install "graphica-plot>=2.0,<3"
+# 本体が無くても計算のテストは走る(配線・読み込み・zip のテストは skip)。
+pytest==9.1.1

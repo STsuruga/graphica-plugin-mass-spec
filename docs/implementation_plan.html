@@ -1,0 +1,351 @@
+<title>MS パック実装計画</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+JP:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@700;900&display=swap">
+<style>
+/* 開発ハブと同じく Graphica 本体の gui/theme.py のトークンに合わせている */
+:root {
+  --bg: #F6F7F9; --surface: #FFFFFF; --surface-2: #EEF0F3;
+  --border: #DFE2E1; --border-strong: #C9CDCB;
+  --text: #1B1F1E; --text-2: #5B6462; --text-3: #7A837F;
+  --accent: #1F6F78; --accent-soft: #E4F0EF;
+  --link: #2563EB; --focus: #2563EB;
+  --done: #1D7A46; --done-soft: #E2F3E8;
+  --prog: #2563EB; --prog-soft: #E3ECFD;
+  --next: #9A5B00; --next-soft: #FDF1D8;
+  --hold: #5B6462; --hold-soft: #EEF0F3;
+  --sample: #2563EB; --sample-soft: rgba(37,99,235,.14);
+  --bgband: #7A837F; --bgband-soft: rgba(122,131,127,.18);
+  --calc: #C2410C;
+  --code-bg: #EEF0F3;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --sans: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  --display: "Zen Kaku Gothic New", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #14171A; --surface: #1B1F22; --surface-2: #21262A;
+    --border: #2C3236; --border-strong: #3A4147;
+    --text: #EDEFEF; --text-2: #A6AEB2; --text-3: #858E92;
+    --accent: #5FB6BE; --accent-soft: rgba(95,182,190,.16);
+    --link: #6EA2F7; --focus: #3B82F6;
+    --done: #5CC98A; --done-soft: rgba(92,201,138,.14);
+    --prog: #6EA2F7; --prog-soft: rgba(59,130,246,.18);
+    --next: #F2C14E; --next-soft: rgba(250,204,21,.14);
+    --hold: #A6AEB2; --hold-soft: #21262A;
+    --sample: #6EA2F7; --sample-soft: rgba(110,162,247,.20);
+    --bgband: #A6AEB2; --bgband-soft: rgba(166,174,178,.18);
+    --calc: #FB923C;
+    --code-bg: #21262A;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #14171A; --surface: #1B1F22; --surface-2: #21262A;
+  --border: #2C3236; --border-strong: #3A4147;
+  --text: #EDEFEF; --text-2: #A6AEB2; --text-3: #858E92;
+  --accent: #5FB6BE; --accent-soft: rgba(95,182,190,.16);
+  --link: #6EA2F7; --focus: #3B82F6;
+  --done: #5CC98A; --done-soft: rgba(92,201,138,.14);
+  --prog: #6EA2F7; --prog-soft: rgba(59,130,246,.18);
+  --next: #F2C14E; --next-soft: rgba(250,204,21,.14);
+  --hold: #A6AEB2; --hold-soft: #21262A;
+  --sample: #6EA2F7; --sample-soft: rgba(110,162,247,.20);
+  --bgband: #A6AEB2; --bgband-soft: rgba(166,174,178,.18);
+  --calc: #FB923C;
+  --code-bg: #21262A;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.75; }
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 72px; display: grid; gap: 34px; }
+a { color: var(--link); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+code { background: var(--code-bg); padding: .06em .35em; border-radius: 4px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.35; margin: 0; }
+h2 { font-size: 20px; }
+h3 { font-size: 15px; font-family: var(--sans); font-weight: 700; }
+p { margin: 0; max-width: 72ch; }
+section { display: grid; gap: 12px; }
+ul { margin: 0; padding-left: 1.2em; }
+li + li { margin-top: 3px; }
+
+.head { display: grid; gap: 8px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--accent); }
+.head h1 { font-size: clamp(24px, 4vw, 32px); font-weight: 900; }
+.head p { color: var(--text-2); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--text-2); }
+.facts b { color: var(--text); font-weight: 500; }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 0 9px; border-radius: 99px; white-space: nowrap; line-height: 1.9; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.c-done { color: var(--done); background: var(--done-soft); }
+.c-prog { color: var(--prog); background: var(--prog-soft); }
+.c-wait { color: var(--next); background: var(--next-soft); }
+.c-todo { color: var(--hold); background: var(--hold-soft); }
+.new { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 6px; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
+
+.tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+th { font-weight: 700; color: var(--text-2); background: var(--surface-2); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.k { white-space: nowrap; font-weight: 500; }
+kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface-2); white-space: nowrap; }
+
+.req { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.req > div { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; }
+.req strong { font-size: 14px; }
+.req span { font-size: 13px; color: var(--text-2); }
+
+.note { border-left: 3px solid var(--next); background: var(--next-soft); padding: 8px 12px; border-radius: 0 6px 6px 0; font-size: 13px; max-width: 80ch; }
+
+/* パネルの見取り図 */
+.mock { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; overflow: hidden; max-width: 560px; font-size: 12px; }
+.mock .bar { background: var(--surface-2); border-bottom: 1px solid var(--border); padding: 5px 10px; font-weight: 700; color: var(--text-2); display: flex; justify-content: space-between; }
+.mock .body { padding: 10px; display: grid; gap: 8px; }
+.mrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fake { border: 1px solid var(--border-strong); border-radius: 5px; padding: 1px 8px; background: var(--bg); color: var(--text-2); white-space: nowrap; }
+.fbtn { border: 1px solid var(--accent); color: var(--accent); border-radius: 5px; padding: 1px 8px; white-space: nowrap; }
+.plot { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.plot svg { display: block; width: 100%; height: auto; }
+.lbl { font-size: 11px; color: var(--text-3); }
+.mockwrap { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.legend { display: grid; gap: 8px; font-size: 13px; }
+.legend div { display: grid; grid-template-columns: 22px 1fr; gap: 8px; }
+.num { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 50%; width: 20px; height: 20px; display: grid; place-items: center; }
+
+.steps { display: grid; gap: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.step { display: grid; grid-template-columns: 44px 1fr auto; gap: 2px 12px; padding: 10px 14px; border-top: 1px solid var(--border); align-items: start; }
+.step:first-child { border-top: 0; }
+.step .sid { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--accent); padding-top: 2px; }
+.step .st { font-weight: 500; }
+.step .sd { grid-column: 2 / 4; font-size: 13px; color: var(--text-2); }
+
+@media (max-width: 720px) {
+  .mockwrap { grid-template-columns: 1fr; }
+  .step { grid-template-columns: 40px 1fr; }
+  .step .chip { grid-column: 2; justify-self: start; }
+  .step .sd { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div class="eyebrow">P-316 · graphica-plugin-mass-spec · Graphica プラグイン API 2.0</div>
+    <h1>質量分析 (MS) パック 実装計画</h1>
+    <p>Bruker micrOTOF の測定(<code>.d</code>)を ProteoWizard の msconvert で自動的に mzML に変換して読み込み、TIC から時間範囲を選んだ平均スペクトルを作り、組成式から計算した同位体パターンを重ねて ppm 誤差を出すプラグインの計画です。仕様はユーザーと合意済みで、実データ(mzML)の中身だけが確認待ちです。</p>
+    <div class="facts">
+      <span><b>状態</b> 仕様確定・実装中</span>
+      <span><b>使うフック</b> <code>register_importer</code> <code>register_panel</code> <code>register_analyzer</code> <code>register_plot_type</code> <code>register_menu_action</code></span>
+      <span><b>更新</b> 2026-09-28</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>決まった仕様(v1.0)</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>項目</th><th>決定</th></tr></thead>
+      <tbody>
+        <tr><td class="k">読み込み<span class="new">変更</span></td><td>パネルで <code>.d</code> フォルダを選ぶと、プラグインが ProteoWizard の msconvert を別プロセスで実行して mzML に変換し(画面は止めない)、読み込む。変換した mzML はプラグインの保存フォルダにキャッシュし、同じ <code>.d</code> は2回目から変換しない。ProteoWizard は最初に1回インストールするだけで、測定ごとの手作業の変換は要らない。mzML を直接開くこともできる。mzML は XML・base64・zlib を標準ライブラリと numpy で解釈する(pyteomics は使わない)。</td></tr>
+        <tr><td class="k">操作画面</td><td>ドックパネル(タブごとに1つ、フロートすれば独立ウィンドウとしても使える)。複数の mzML を一覧に開いて切り替えられるので、正負のファイルを並べて比べられる。</td></tr>
+        <tr><td class="k">時間範囲の選択</td><td>パネル内の TIC をドラッグして選び、開始・終了の数値欄と連動させる。</td></tr>
+        <tr><td class="k">背景の差し引き</td><td>v1.0 に入れる。「試料」と「背景」の2つの時間範囲の平均の差を作る。負の値を 0 にするかを選べる。</td></tr>
+        <tr><td class="k">ファイルを開く / ドロップ</td><td>importer は、スキャンが1つならそのスペクトル、複数なら TIC を返す。スペクトルの切り出しはパネルで行う。</td></tr>
+        <tr><td class="k">照合の入口</td><td>analyzer「同位体パターンと照合」(選択中の実測スペクトルに対して実行し、表・重ね描き・注釈を返す)と、パネルの「組成式から計算」欄(実測なしでも計算できる)。</td></tr>
+        <tr><td class="k">付加イオン</td><td>正の標準([M+H]+ [M+Na]+ [M+K]+ [M+NH4]+ [M]+•)、負の標準([M−H]− [M+Cl]− [M]−• [M+HCOO]−)、または <code>[2M+Na]+, [M+2H]2+, [M−H−H2O]−</code> のような表記の入力。表記を解釈するので、ユーザー定義・多量体・2価以上も扱える。重ねるのは実測に見つかった付加イオンだけで、表には全部出す。</td></tr>
+        <tr><td class="k">線幅(分解能)</td><td>ガウスの FWHM = m/z ÷ R。R の欄が 0 なら実測の最も強い同位体ピークの半値全幅から求め、使った値を表に出す。</td></tr>
+        <tr><td class="k">追加するスペクトル</td><td>平均した profile を線で追加。任意で、プラグインが求めた centroid を棒(Stick)で追加。計算パターンは線と棒の両方。</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>追加の要件(2026-09-28)</h2>
+    <div class="req">
+      <div><strong>マウスのドラッグ操作を充実させる</strong><span>パネル内の TIC とスペクトルに、範囲選択・拡大・パン・測定・範囲の伸縮と移動を持たせる(下の「マウス操作」)。</span></div>
+      <div><strong>ピークに数値を表示する</strong><span>パネルのスペクトルでは表示範囲の主なピークに m/z を自動で表示。本体のプロットに送ったデータセットにもラベルを付ける。</span></div>
+      <div><strong>表示桁数を変えられる</strong><span>m/z の小数点以下の桁数(既定 4)、強度の表し方、ppm の桁数をパネルで設定。パネルの表示・送ったラベル・表に効く。</span></div>
+      <div><strong>プロットに転送する</strong><span>TIC、平均スペクトル(背景差し引き後を含む)、centroid、計算パターンを、ボタンと右クリックメニューから本体のプロットに追加する(Undo 可)。</span></div>
+    </div>
+    <p class="note">本体のプロット(メイン画面の軸)には、プラグインからマウス操作を足す拡張点がありません。ドラッグ操作はパネル内のグラフで行い、結果を本体に転送する形にします。本体のプロットでは、本体にもともとあるホイール拡大・中ボタンのパン・範囲選択モードがそのまま使えます。</p>
+  </section>
+
+  <section>
+    <h2>パネルの構成</h2>
+    <div class="mockwrap">
+      <div class="mock" aria-label="パネルの見取り図">
+        <div class="bar"><span>MS スペクトル</span><span>⧉ ×</span></div>
+        <div class="body">
+          <div class="mrow"><span class="num">1</span><span class="fake" style="flex:1">sample-pos.mzML(+、1037 スキャン)▾</span><span class="fbtn">.d を開く…</span><span class="fbtn">mzML…</span><span class="fbtn">閉じる</span></div>
+          <div class="plot" aria-label="TIC のグラフ">
+            <svg viewBox="0 0 520 110" role="img" aria-label="TIC と選択した時間範囲">
+              <rect x="150" y="8" width="70" height="84" fill="var(--sample-soft)"/>
+              <rect x="330" y="8" width="60" height="84" fill="var(--bgband-soft)"/>
+              <line x1="30" y1="92" x2="510" y2="92" stroke="var(--border-strong)" stroke-width="1"/>
+              <polyline fill="none" stroke="var(--text-2)" stroke-width="1.5" points="30,86 80,85 120,84 140,78 155,50 170,20 185,16 200,28 215,55 235,76 260,82 300,84 340,85 380,85 420,86 470,86 510,86"/>
+              <text x="185" y="104" font-size="10" fill="var(--sample)" text-anchor="middle" font-family="var(--mono)">試料 1.62–2.31 min</text>
+              <text x="360" y="104" font-size="10" fill="var(--text-3)" text-anchor="middle" font-family="var(--mono)">背景 4.4–5.0</text>
+              <text x="8" y="16" font-size="10" fill="var(--text-3)" font-family="var(--mono)">2</text>
+            </svg>
+          </div>
+          <div class="mrow"><span class="num">3</span><span class="lbl">試料</span><span class="fake mono">1.620</span><span class="lbl">–</span><span class="fake mono">2.310</span><span class="lbl">min 背景</span><span class="fake mono">4.40</span><span class="lbl">–</span><span class="fake mono">5.00</span><span class="fake">☑ 差し引く</span></div>
+          <div class="plot" aria-label="スペクトルのグラフ">
+            <svg viewBox="0 0 520 150" role="img" aria-label="平均スペクトル、ピークラベル、計算パターンの重ね描き">
+              <line x1="30" y1="130" x2="510" y2="130" stroke="var(--border-strong)" stroke-width="1"/>
+              <polyline fill="none" stroke="var(--text)" stroke-width="1.3" points="30,129 90,129 104,129 108,40 112,129 150,129 190,129 193,108 196,129 250,129 290,129 294,70 298,129 330,129 334,112 338,129 372,129 376,124 380,129 510,129"/>
+              <line x1="294" y1="129" x2="294" y2="72" stroke="var(--calc)" stroke-width="2" opacity=".8"/>
+              <line x1="334" y1="129" x2="334" y2="113" stroke="var(--calc)" stroke-width="2" opacity=".8"/>
+              <line x1="376" y1="129" x2="376" y2="124" stroke="var(--calc)" stroke-width="2" opacity=".8"/>
+              <text x="112" y="36" font-size="10" fill="var(--text-2)" font-family="var(--mono)">301.1412</text>
+              <text x="298" y="66" font-size="10" fill="var(--text-2)" font-family="var(--mono)">523.2451</text>
+              <text x="338" y="108" font-size="10" fill="var(--text-2)" font-family="var(--mono)">524.2483</text>
+              <text x="193" y="104" font-size="10" fill="var(--text-2)" font-family="var(--mono)">401.20</text>
+              <line x1="294" y1="20" x2="334" y2="20" stroke="var(--accent)" stroke-width="1"/>
+              <line x1="294" y1="16" x2="294" y2="24" stroke="var(--accent)" stroke-width="1"/>
+              <line x1="334" y1="16" x2="334" y2="24" stroke="var(--accent)" stroke-width="1"/>
+              <text x="340" y="24" font-size="10" fill="var(--accent)" font-family="var(--mono)">Δ 1.0032 → z = 1</text>
+              <text x="8" y="16" font-size="10" fill="var(--text-3)" font-family="var(--mono)">4</text>
+              <text x="505" y="145" font-size="10" fill="var(--text-3)" text-anchor="end" font-family="var(--mono)">m/z 523.2448  強度 1.84e5</text>
+            </svg>
+          </div>
+          <div class="mrow"><span class="num">5</span><span class="lbl">ラベル</span><span class="fake">上位 10 本 ▾</span><span class="lbl">m/z 桁</span><span class="fake mono">4</span><span class="lbl">強度</span><span class="fake">相対 % ▾</span></div>
+          <div class="mrow"><span class="num">6</span><span class="lbl">組成式</span><span class="fake mono" style="flex:1">C28H36N2O6</span><span class="fake">正の標準 ▾</span><span class="lbl">R</span><span class="fake mono">0</span><span class="fbtn">計算</span></div>
+          <div class="mrow"><span class="num">7</span><span class="fbtn">TIC を転送</span><span class="fbtn">スペクトルを転送</span><span class="fbtn">centroid を転送</span><span class="fbtn">計算パターンを転送</span></div>
+        </div>
+      </div>
+      <div class="legend">
+        <div><span class="num">1</span><span>開いた測定の一覧。極性とスキャン数を表示。<code>.d</code> を選ぶと変換の進み具合をここに出す。正負の2ファイルを開いて切り替えて比べる。</span></div>
+        <div><span class="num">2</span><span>TIC。青い帯が試料、灰色の帯が背景の時間範囲。</span></div>
+        <div><span class="num">3</span><span>範囲の数値欄。ドラッグと双方向に連動する。</span></div>
+        <div><span class="num">4</span><span>選んだ範囲の平均スペクトル。主なピークに m/z のラベル、計算パターン(棒)の重ね描き、Δm/z の測定、カーソル位置の読み取り。</span></div>
+        <div><span class="num">5</span><span>ラベルの出し方と桁数。設定はプラグインの保存フォルダ(<code>ctx.data_dir</code>)に残る。</span></div>
+        <div><span class="num">6</span><span>組成式から計算。モノアイソトピック質量・平均分子量・付加イオンの m/z と照合表をパネルに表示する。</span></div>
+        <div><span class="num">7</span><span>本体のプロットへ転送。右クリックメニューからも同じ操作ができ、「表示中の m/z 範囲だけ」を選べる。</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>マウス操作</h2>
+    <p>matplotlib の <code>FigureCanvasQTAgg</code> をパネルに置き、マウスイベントを自前で処理します(matplotlib 標準のツールバーは使わず、操作を下の表にそろえる)。</p>
+    <div class="tbl"><table>
+      <thead><tr><th>グラフ</th><th>操作</th><th>動作</th></tr></thead>
+      <tbody>
+        <tr><td class="k" rowspan="8">TIC</td><td><kbd>左ドラッグ</kbd></td><td>試料の時間範囲を選ぶ(青い帯)</td></tr>
+        <tr><td><kbd>Shift</kbd>+<kbd>左ドラッグ</kbd></td><td>背景の時間範囲を選ぶ(灰色の帯)</td></tr>
+        <tr><td>帯の端 / 帯の中を <kbd>ドラッグ</kbd></td><td>範囲を伸縮 / 範囲を移動</td></tr>
+        <tr><td><kbd>左クリック</kbd></td><td>その時刻の1スキャンのスペクトルを下に表示</td></tr>
+        <tr><td><kbd>ホイール</kbd></td><td>カーソル位置を中心に時間軸を拡大・縮小</td></tr>
+        <tr><td><kbd>中ボタンドラッグ</kbd></td><td>表示をずらす(パン)</td></tr>
+        <tr><td><kbd>ダブルクリック</kbd></td><td>全体を表示</td></tr>
+        <tr><td><kbd>右クリック</kbd></td><td>メニュー: TIC を転送、背景の範囲を解除、全体を表示</td></tr>
+        <tr><td class="k" rowspan="9">スペクトル</td><td><kbd>左ドラッグ</kbd></td><td>その m/z 範囲に拡大(縦は範囲内の最大に合わせる)</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>左ドラッグ</kbd></td><td>矩形で拡大(横と縦)</td></tr>
+        <tr><td><kbd>Shift</kbd>+<kbd>左ドラッグ</kbd></td><td>2点間の Δm/z と ppm を測る。Δ が 1.003/z に近ければ電荷数 z を表示(同位体間隔から価数を見る)</td></tr>
+        <tr><td><kbd>ホイール</kbd> / <kbd>Shift</kbd>+<kbd>ホイール</kbd></td><td>m/z 軸 / 強度軸の拡大・縮小(カーソル位置が中心)</td></tr>
+        <tr><td><kbd>中ボタンドラッグ</kbd></td><td>パン</td></tr>
+        <tr><td><kbd>ダブルクリック</kbd> / <kbd>Backspace</kbd></td><td>全体を表示 / 1つ前の表示範囲に戻る(拡大の履歴)</td></tr>
+        <tr><td>カーソルを合わせる</td><td>近いピークの m/z と強度を右下に表示(十字線)</td></tr>
+        <tr><td>ピークを <kbd>クリック</kbd></td><td>ピークを選び、ラベルを固定表示(自動ラベルに入らない弱いピークにも付けられる)。もう一度で解除</td></tr>
+        <tr><td><kbd>右クリック</kbd></td><td>メニュー: 表示中の範囲を転送、全範囲を転送、centroid を転送、計算パターンを転送、ラベルの表示切り替え、ピーク一覧をコピー</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>ピークのラベルと桁数</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>場所</th><th>付け方</th></tr></thead>
+      <tbody>
+        <tr><td class="k">パネルのスペクトル</td><td>表示範囲の中で強い順に N 本(既定 10、「相対強度 X% 以上」にも切り替え可)。拡大すると範囲の中で選び直すので、拡大するほど細かいピークにもラベルが付く。近すぎるラベルは強い方を残す。クリックで固定したピークは常に表示。</td></tr>
+        <tr><td class="k">本体のプロット</td><td>送る centroid の Stick データセットに文字列のラベル列を持たせ、本体の「点のラベル」(<code>show_point_labels</code> と <code>point_label_col_name</code>)で表示する。ラベルを付けるのはパネルと同じ規則で選んだピークだけで、ほかの行は空文字(本体は空のラベルを描かない)。</td></tr>
+        <tr><td class="k">profile だけに付けたいとき</td><td>「ピークラベルだけを転送」: 同じ Stick データセットを線なし(線種「なし」)で送る。Stick の描画は線種が「なし」なら棒を描かず、本体がラベルだけを描く。</td></tr>
+        <tr><td class="k">analyzer の結果</td><td>付加イオンごとに、基準ピークの位置へ「[M+H]+ 523.2451 (−1.2 ppm)」の text 注釈を付ける。表の数値は桁を丸めずに持つ(CSV で精度を落とさない)。</td></tr>
+        <tr><td class="k">桁数の設定</td><td>m/z の小数点以下の桁数(0〜6、既定 4)、強度の表し方(なし / 相対 % / 絶対値の指数表記)、ppm の小数点以下の桁数(既定 1)。パネルの設定とラベル列の文字列に使う。analyzer ではフォームの「m/z の桁数」。</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">本体の点のラベルは、文字の大きさ(8 pt)と位置(点の右上)が固定で、色はデータセットの色です。データセットの点数が本体の上限(環境設定、既定 1000 点)を超えるとラベルは描かれないので、ラベル付きのデータセットはピークだけに絞って送ります。profile(数万点)にはラベルを直接付けられません。</p>
+  </section>
+
+  <section>
+    <h2>プロットへの転送</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>転送するもの</th><th>データセット</th></tr></thead>
+      <tbody>
+        <tr><td class="k">TIC</td><td>時間 (min) と全イオン強度。線。名前は「ファイル名 TIC」。</td></tr>
+        <tr><td class="k">平均スペクトル</td><td>m/z と強度の profile。線。名前に時間範囲と「背景差し引き」を入れる。全範囲か、パネルで表示中の m/z 範囲だけかを選べる(数万点の profile を軽くする)。</td></tr>
+        <tr><td class="k">centroid</td><td>プラグインが profile から求めたピーク(強度加重の重心)。Stick とラベル列。</td></tr>
+        <tr><td class="k">計算パターン</td><td>付加イオンごとに、実測の強度に合わせた profile(線)と棒(Stick、ラベル付き)。</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>追加は <code>ctx.add_dataset</code> で、1つずつ Undo できる。色は <code>ctx.active_color_cycle()</code> から順に取る。<code>source_file</code> / <code>source_plugin</code> / <code>provenance</code>(時間範囲・背景・組成式・付加イオン・R)を記録する。</li>
+      <li>照合表は本体のプロットには置けないので、パネルの「表をコピー」(タブ区切り)と、analyzer の結果の表(本体が CSV 保存を受け持つ)で扱う。</li>
+      <li>送り先のサブプロットはパネルで番号を選べる(<code>Dataset.subplot_target</code>)。本体の表示範囲はプラグインから変えられない。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>モジュール構成</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>ファイル</th><th>役割</th><th>依存</th></tr></thead>
+      <tbody>
+        <tr><td class="k mono">chemistry.py</td><td>組成式の解釈、モノアイソトピック質量・平均分子量、付加イオンの表記の解釈、同位体パターン(元素ごとの分布を質量数の差で束ねて畳み込み、確率で重み付けした平均質量を1本にする)、ガウスのプロファイル</td><td>numpy</td></tr>
+        <tr><td class="k mono">isotopes.py</td><td>NIST の同位体の質量と存在比(P-805 からコピー)</td><td>なし</td></tr>
+        <tr><td class="k mono">convert.py</td><td>msconvert の場所の自動検出(Program Files と LocalAppData の ProteoWizard、見つからなければパネルで指定)、変換の引数、キャッシュ(キーは <code>.d</code> の絶対パス・<code>analysis.baf</code> の大きさと更新時刻・変換の設定・msconvert の版)。実行はパネルが <code>QProcess</code> で行う</td><td>標準ライブラリ</td></tr>
+        <tr><td class="k mono">mzml.py</td><td>mzML(indexedmzML を含む)の読み込み。スキャンの時刻・極性・MS レベル・TIC を先に読み、配列(32/64 bit、zlib の有無)は必要なときに復号する</td><td>標準ライブラリ, numpy</td></tr>
+        <tr><td class="k mono">spectra.py</td><td>時間範囲の平均、背景の差し引き、centroid(ピーク検出と重心)、FWHM、ラベルを付けるピークの選択、桁数に従った文字列</td><td>numpy</td></tr>
+        <tr><td class="k mono">matching.py</td><td>計算パターンと実測の照合: ピークの対応づけ、ppm 誤差、相対強度、R の推定、強度合わせ、結果の表</td><td>numpy, pandas</td></tr>
+        <tr><td class="k mono">plot_types.py</td><td>Stick の描画(<code>vlines</code>、線種「なし」なら描かない)</td><td>matplotlib</td></tr>
+        <tr><td class="k mono">panel.py / plots.py</td><td>ドックパネルと、マウス操作を持つ TIC・スペクトルのグラフ</td><td>PySide6, matplotlib</td></tr>
+        <tr><td class="k mono">__init__.py</td><td><code>register(api)</code> だけ</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>作業の順番</h2>
+    <div class="steps">
+      <div class="step"><span class="sid">S1</span><span class="st">リポジトリと開発環境</span><span class="chip c-done">完了</span><span class="sd">GitHub に作成、雛形(conftest / build_zip / CI)をコピー、仮想環境に graphica-plot 2.0 を導入。</span></div>
+      <div class="step"><span class="sid">S2</span><span class="st">組成式と同位体パターン(chemistry.py)</span><span class="chip c-prog">進行中</span><span class="sd">既知の化合物の質量・パターンと突き合わせる単体テスト(例: C6H12O6、Cl や Br を含む化合物の M+2)。</span></div>
+      <div class="step"><span class="sid">S3</span><span class="st">実データの確認</span><span class="chip c-wait">ProteoWizard 待ち</span><span class="sd">サンプル3件を変換し、profile か centroid か、スキャン数、1スキャンの点数、スキャン間で m/z の格子が同じか、圧縮を調べる。変換の推奨設定を決めて README に書く。</span></div>
+      <div class="step"><span class="sid">S4</span><span class="st">mzML の読み込み(mzml.py)</span><span class="chip c-todo">未着手</span><span class="sd">合成した mzML(32/64 bit、圧縮あり/なし、indexed あり/なし、正負)でテスト。実データで読み込み時間とメモリを測って note に残す。</span></div>
+      <div class="step"><span class="sid">S4b</span><span class="st">.d の自動変換(convert.py)</span><span class="chip c-todo">未着手</span><span class="sd">msconvert の検出・引数・キャッシュのキーを単体テスト。変換そのものは偽の msconvert(引数を記録して mzML を書くスクリプト)でテストし、本物はローカルでだけ確かめる。変換にかかる時間を測る。</span></div>
+      <div class="step"><span class="sid">S5</span><span class="st">平均・背景・centroid(spectra.py)</span><span class="chip c-todo">未着手</span><span class="sd">平均の方法は S3 の結果で決める(格子が共通なら単純平均、違えば共通の格子に寄せる)。</span></div>
+      <div class="step"><span class="sid">S6</span><span class="st">照合(matching.py)と analyzer</span><span class="chip c-todo">未着手</span><span class="sd">合成スペクトル(既知の組成式のパターン+ずれ+雑音)で ppm と相対強度を確かめる。</span></div>
+      <div class="step"><span class="sid">S7</span><span class="st">Stick の描画と importer</span><span class="chip c-todo">未着手</span><span class="sd">FakeGraphicaPluginAPI と load_plugin_like_graphica で配線を確認。</span></div>
+      <div class="step"><span class="sid">S8</span><span class="st">パネルとマウス操作</span><span class="chip c-todo">未着手</span><span class="sd">表のマウス操作を、matplotlib のイベントを合成して offscreen でテストする。</span></div>
+      <div class="step"><span class="sid">S9</span><span class="st">ラベル・桁数・転送</span><span class="chip c-todo">未着手</span><span class="sd">FakePluginContext で、追加されるデータセットの列・ラベル・名前・provenance を確認。</span></div>
+      <div class="step"><span class="sid">S10</span><span class="st">実機確認</span><span class="chip c-todo">未着手</span><span class="sd">zip を仮想環境の graphica と Releases の exe の両方に入れ、ユーザーのサンプルで操作。画面はユーザーにも確認してもらう。</span></div>
+      <div class="step"><span class="sid">S11</span><span class="st">リリースとハブの更新</span><span class="chip c-todo">未着手</span><span class="sd">v1.0.0 のタグと Release に zip、ハブの db と本体の PLUGIN_DEVELOPMENT_PROGRESS.md に1行。</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>本体の制約と対処</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>制約</th><th>対処</th></tr></thead>
+      <tbody>
+        <tr><td>すべて GUI スレッドで同期実行される</td><td>最初はスキャンの見出し(時刻・TIC)だけを読み、配列は選んだ範囲の分だけ復号する。実データで 1 秒を超えるなら、パネルの中で QThread を使って読み込み、進み具合を表示する(<code>ctx</code> の呼び出しは GUI スレッドだけ)。</td></tr>
+        <tr><td>importer は DataFrame を1つだけ返し、フォルダは開けない</td><td>主な入口はパネル(<code>.d</code> フォルダはパネルから選ぶ)。importer は mzML だけを受け、TIC か1本のスペクトルを返す。</td></tr>
+        <tr><td>プラグインは本体に同梱のパッケージしか使えず、<code>.baf</code> は非公開形式</td><td>変換は利用者が入れた ProteoWizard の msconvert に任せる(プラグインは何も同梱しない)。msconvert は数秒〜数十秒かかりうるので、<code>QProcess</code> で別プロセスとして動かし、終わったら GUI スレッドで読み込む。</td></tr>
+        <tr><td>本体のプロットにマウス操作を足せない、注釈を <code>ctx</code> から足せない</td><td>操作はパネル内のグラフ、本体のラベルは点のラベル(ラベル列)で出す。analyzer の結果だけは注釈を返せる。</td></tr>
+        <tr><td>param_schema の choice は登録時に固定</td><td>付加イオンは「標準セット」の choice と、表記を書く文字列欄の組み合わせにする。</td></tr>
+        <tr><td>点のラベルは既定 1000 点までのデータセットにしか描かれない</td><td>ラベル付きで送るのはピーク(centroid)に絞ったデータセットだけ。</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>v1.0 に入れないもの</h2>
+    <ul>
+      <li><code>.d</code> の直接読み込み(Bruker の baf2sql を ctypes で呼ぶ方法)。次の版の候補。</li>
+      <li>m/z からの組成式の推定(候補の列挙)、フラグメント解析。</li>
+      <li>LC-MS の netCDF(ANDI-MS)。P-108 で扱う。</li>
+      <li>ユーザーの測定データをテストデータとして公開リポジトリに入れること。テストは合成した mzML だけで行う。</li>
+    </ul>
+  </section>
+</div>

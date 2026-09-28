@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# 配布用zipのビルド成果物(scripts/build_zip.py が生成、毎回作り直す)
+dist/
+
+# pytest
+.pytest_cache/
+
+# 仮想環境
+venv/
+.venv/
