@@ -450,6 +450,40 @@ def test_showing_the_panel_hides_the_dock_and_opens_the_window(ctx):
     viewer.close()
     main.close()
 
+def test_open_d_reads_baf_directly_without_msconvert(panel, ctx, tmp_path):
+    from synthetic_baf import peaks_profile, write_baf_d
+    d = _fake_d(tmp_path)   # 偽の msconvert も置くが、呼ばれないことを確かめる
+    write_baf_d(d, [(t, 1, peaks_profile(3000), 10.0 * t) for t in (1000, 2000, 3000)])
+    panel.settings["msconvert_path"] = sys.executable
+    panel.open_d(str(d))
+    assert panel._process is None and panel.run_list.count() == 1
+    assert not (d / "calls.txt").exists()
+    assert panel.current_run().path == str(d) and len(panel.current_run().tics()) == 3
+    assert panel.run_list.currentItem().text() == "measure"
+
+
+def test_open_d_falls_back_to_msconvert_for_other_formats(panel, ctx, tmp_path):
+    from synthetic_baf import write_baf_d
+    d = _fake_d(tmp_path)
+    write_baf_d(d, [(1000, 1, [0, 1, 0], 1.0)], declare=False)
+    panel.settings["msconvert_path"] = sys.executable
+    panel.open_d(str(d))
+    assert "msconvert" in panel.last_status
+    _wait(lambda: panel._process is None)
+    assert (d / "calls.txt").exists() and panel.run_list.count() == 1
+
+
+def test_baf_importer_returns_the_tic(tmp_path):
+    from synthetic_baf import peaks_profile, write_baf_d
+
+    from mass_spec.analyzer import load_baf_file
+    d = write_baf_d(tmp_path / "x.d", [(t, 1, peaks_profile(3000), 5.0) for t in (1000, 2000)])
+    frame = load_baf_file(os.path.join(d, "analysis.baf"))
+    assert list(frame.columns) == ["時間 (min)", "TIC"] and len(frame) == 2
+    bad = write_baf_d(tmp_path / "y.d", [(1000, 1, [0, 1], 1.0)], declare=False)
+    with pytest.raises(ValueError, match="msconvert"):
+        load_baf_file(os.path.join(bad, "analysis.baf"))
+
 
 def test_old_label_mode_setting_falls_back_to_percent(ctx):
     import json

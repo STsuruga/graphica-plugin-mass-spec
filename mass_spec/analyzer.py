@@ -1,4 +1,6 @@
-"""analyzer「同位体パターンと照合」と、mzML の importer。"""
+"""analyzer「同位体パターンと照合」と、mzML・BAF の importer。"""
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -10,6 +12,7 @@ from .chemistry import (
 )
 from .datasets import INTENSITY_COL, MZ_COL, TIC_COL, TIME_COL, fallback_colors, pattern_datasets
 from .matching import match_all, results_table
+from .baf import BafUnsupported, read_baf
 from .mzml import MzmlError, read_mzml
 from .spectra import LabelFormat, compact_zeros
 
@@ -97,6 +100,19 @@ def load_mzml_file(path):
         run = read_mzml(path)
     except MzmlError as e:
         raise ValueError(str(e)) from e
+    return _run_to_frame(run)
+
+
+def load_baf_file(path):
+    """importer: .d の中の analysis.baf を選んだとき。フォルダごと読む。"""
+    try:
+        run = read_baf(os.path.dirname(os.path.abspath(path)))
+    except BafUnsupported as e:
+        raise ValueError(f"{e}。MS ビューアの「.d を開く」なら msconvert で変換して開けます") from e
+    return _run_to_frame(run)
+
+
+def _run_to_frame(run):
     scans = run.ms1_scans() or run.scans
     if len(scans) == 1:
         mz, y = compact_zeros(*scans[0].arrays())

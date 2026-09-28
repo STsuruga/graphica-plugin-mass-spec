@@ -27,6 +27,7 @@ from .chemistry import (
 from .datasets import (
     centroid_dataset, pattern_datasets, range_text, spectrum_dataset, stick_dataset, tic_dataset,
 )
+from .baf import BafUnsupported, is_baf_folder, read_baf
 from .matching import match_all
 from .mzml import MzmlError, read_mzml
 from .plots import PanePlot, SpectrumPlot, TicPlot
@@ -510,13 +511,17 @@ class MassSpecPanel(QWidget):
             self.open_d(path)
 
     def open_mzml(self, path, display_name=None):
+        return self._open_run(read_mzml, path, display_name, (MzmlError, OSError))
+
+    def _open_run(self, reader, path, display_name, errors):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             started = time.perf_counter()
-            run = read_mzml(path)
+            run = reader(path)
             elapsed = time.perf_counter() - started
-        except (MzmlError, OSError) as e:
-            self.ctx.show_error(f"{os.path.basename(path)} を読めませんでした。\n{e}", "MS パック")
+        except errors as e:
+            name = os.path.basename(path.rstrip("\\/"))
+            self.ctx.show_error(f"{name} を読めませんでした。\n{e}", "MS パック")
             return None
         finally:
             QGuiApplication.restoreOverrideCursor()
@@ -568,6 +573,18 @@ class MassSpecPanel(QWidget):
         if not convert.is_d_folder(d_path):
             self.ctx.show_error(f"{d_path} は .d フォルダではありません。", "MS パック")
             return
+        # まず analysis.baf を直接読む。対応していない形式のときだけ msconvert に任せる
+        if is_baf_folder(d_path):
+            try:
+                run = read_baf(d_path)
+            except BafUnsupported as e:
+                self._status(f"直接は読めない形式です({e})。msconvert で変換します")
+            except OSError as e:
+                self.ctx.show_error(f"{d_path} を読めませんでした。\n{e}", "MS パック")
+                return
+            else:
+                self._open_run(lambda _path: run, d_path, None, (OSError,))
+                return
         if self._process is not None:
             self.ctx.show_error("別の測定を変換中です。終わってから開いてください。", "MS パック")
             return

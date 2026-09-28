@@ -88,8 +88,11 @@ class MzmlRun:
 
     @property
     def name(self):
-        base = os.path.basename(self.path)
-        return base[:-5] if base.lower().endswith(".mzml") else base
+        base = os.path.basename(self.path.rstrip("\\/"))
+        for ext in (".mzml", ".d"):
+            if base.lower().endswith(ext):
+                return base[:-len(ext)]
+        return base
 
     def ms1_scans(self):
         return [s for s in self.scans if s.ms_level == 1]

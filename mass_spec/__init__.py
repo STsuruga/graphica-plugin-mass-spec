@@ -1,5 +1,5 @@
 """質量分析 (MS) パック(Graphica プラグイン、P-316)。"""
-from .analyzer import ANALYZER_NAME, PARAM_SCHEMA, analyze, load_mzml_file
+from .analyzer import ANALYZER_NAME, PARAM_SCHEMA, analyze, load_baf_file, load_mzml_file
 from .plot_types import STICK, draw_stick
 
 PANEL_NAME = "MS スペクトル"
@@ -32,6 +32,7 @@ def _create_panel(ctx):
 def register(api):
     api.register_plot_type(STICK, draw_stick)
     api.register_importer([".mzML"], load_mzml_file, name="mzML(質量分析)")
+    api.register_importer([".baf"], load_baf_file, name="Bruker BAF(質量分析)")
     api.register_analyzer(ANALYZER_NAME, analyze, output_kind="table", param_schema=PARAM_SCHEMA)
     api.register_panel(PANEL_NAME, _create_panel, area="right")
     api.register_menu_action(OPEN_MENU, _open_viewer)
