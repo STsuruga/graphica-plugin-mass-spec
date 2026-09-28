@@ -28,7 +28,7 @@ from .mzml import MzmlError, read_mzml
 from .plots import PanePlot, SpectrumPlot, TicPlot
 from .settings import load_settings, save_settings
 from .spectra import LabelFormat, average_spectrum, compact_zeros, find_peaks, subtract_background
-from .windows import CalcWindow, SettingsWindow, spin
+from .windows import CalcWindow, RangeWindow, SettingsWindow
 
 PANEL_NAME = "MS スペクトル"
 MAX_PANES = 8
@@ -83,6 +83,7 @@ class MassSpecPanel(QWidget):
         self._build()
         self.calc_window = CalcWindow(self)
         self.settings_window = SettingsWindow(self)
+        self.range_window = RangeWindow(self)
         self._apply_label_settings()
         self.set_pane_count(self.settings["pane_count"])
 
@@ -131,18 +132,6 @@ class MassSpecPanel(QWidget):
         self.tic_plot.scan_clicked.connect(self._on_scan_clicked)
         self.tic_plot.context_requested.connect(self._tic_menu)
         tic_layout.addWidget(self.tic_plot, 1)
-        row = QHBoxLayout()
-        self.sample_from = spin(0, 1e4, 0, width=80)
-        self.sample_to = spin(0, 1e4, 0, width=80)
-        self.bg_from = spin(0, 1e4, 0, width=80)
-        self.bg_to = spin(0, 1e4, 0, width=80)
-        for box in (self.sample_from, self.sample_to, self.bg_from, self.bg_to):
-            box.valueChanged.connect(self._on_range_spin_changed)
-        for widget in (QLabel("試料"), self.sample_from, QLabel("–"), self.sample_to, QLabel("min   背景"),
-                       self.bg_from, QLabel("–"), self.bg_to, QLabel("min")):
-            row.addWidget(widget)
-        row.addStretch(1)
-        tic_layout.addLayout(row)
         self.splitter.addWidget(tic_box)
 
         spectrum_box = QWidget()
@@ -189,6 +178,7 @@ class MassSpecPanel(QWidget):
         m.addAction("すべてのグラフを全体表示", self.reset_all_views)
         m.addAction("3段目の枠をすべて空にする", self.clear_all_panes)
         m.addSeparator()
+        m.addAction("時間範囲の詳細設定…", lambda: self._open_window(self.range_window))
         m.addAction("表示設定…", self.open_settings_window)
         m = self.menu_bar.addMenu("計算")
         m.addAction("組成式から計算・照合…", self.open_calc_window)
@@ -203,15 +193,17 @@ class MassSpecPanel(QWidget):
         # PySide6 はメニューを Python 側で持っていないと消すことがあるので、項目を含めて保持する
         self._menu_keepalive = [menu for menu in self.menu_bar.findChildren(QMenu)]
 
+    @staticmethod
+    def _open_window(window):
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
     def open_calc_window(self):
-        self.calc_window.show()
-        self.calc_window.raise_()
-        self.calc_window.activateWindow()
+        self._open_window(self.calc_window)
 
     def open_settings_window(self):
-        self.settings_window.show()
-        self.settings_window.raise_()
-        self.settings_window.activateWindow()
+        self._open_window(self.settings_window)
 
     # ================================================================ 設定
     def _save(self):
@@ -497,18 +489,31 @@ class MassSpecPanel(QWidget):
         run = self.current_run()
         if run is None:
             return
-        times = run.times()
-        self.tic_plot.set_data(times, run.tics())
-        full = (float(times[0]), float(times[-1])) if len(times) else (0.0, 0.0)
-        ranges = self.ranges.setdefault(run.path, {"sample": full, "background": None})
+        self.tic_plot.set_data(run.times(), run.tics())
+        # 開いた直後は全範囲を試料にし、背景はなし。同じ測定に戻ったときは前の範囲を使う
+        ranges = self.ranges.setdefault(run.path, {"sample": self._full_range(run), "background": None})
         self._show_ranges(ranges)
         self.compute_spectrum(keep_view=False)
+
+    @staticmethod
+    def _full_range(run):
+        times = run.times()
+        return (float(times[0]), float(times[-1])) if len(times) else (0.0, 0.0)
+
+    def reset_sample_range(self):
+        run = self.current_run()
+        if run is None:
+            return
+        self.ranges[run.path]["sample"] = self._full_range(run)
+        self._show_ranges(self.ranges[run.path])
+        self.compute_spectrum()
 
     def _show_ranges(self, ranges):
         self._updating = True
         try:
             for (lo, hi), kind in ((ranges["sample"], "sample"), (ranges["background"] or (0.0, 0.0), "background")):
-                boxes = (self.sample_from, self.sample_to) if kind == "sample" else (self.bg_from, self.bg_to)
+                w = self.range_window
+                boxes = (w.sample_from, w.sample_to) if kind == "sample" else (w.bg_from, w.bg_to)
                 boxes[0].setValue(lo)
                 boxes[1].setValue(hi)
             self.tic_plot.set_range("sample", *ranges["sample"])
@@ -520,7 +525,8 @@ class MassSpecPanel(QWidget):
     def _on_tic_range_changing(self, kind, t0, t1):
         self._updating = True
         try:
-            boxes = (self.sample_from, self.sample_to) if kind == "sample" else (self.bg_from, self.bg_to)
+            w = self.range_window
+            boxes = (w.sample_from, w.sample_to) if kind == "sample" else (w.bg_from, w.bg_to)
             boxes[0].setValue(t0)
             boxes[1].setValue(t1)
         finally:
@@ -550,8 +556,8 @@ class MassSpecPanel(QWidget):
         if run is None:
             return
         ranges = self.ranges[run.path]
-        ranges["sample"] = (self.sample_from.value(), self.sample_to.value())
-        bg = (self.bg_from.value(), self.bg_to.value())
+        ranges["sample"] = (self.range_window.sample_from.value(), self.range_window.sample_to.value())
+        bg = (self.range_window.bg_from.value(), self.range_window.bg_to.value())
         ranges["background"] = bg if bg[1] > bg[0] else None
         self.tic_plot.set_range("sample", *ranges["sample"])
         self.tic_plot.set_range("background", *(ranges["background"] or (None, None)))

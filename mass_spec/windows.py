@@ -134,6 +134,42 @@ class CalcWindow(QWidget):
         self.table.resizeColumnsToContents()
 
 
+class RangeWindow(QWidget):
+    """試料と背景の時間範囲を数値で直す。ふだんは TIC のドラッグで決め、ここは細かく合わせるときだけ使う。"""
+
+    def __init__(self, viewer):
+        super().__init__(viewer, Qt.WindowType.Window)
+        self.viewer = viewer
+        self.setWindowTitle("時間範囲の詳細設定 - MS パック")
+        form = QFormLayout(self)
+        self.sample_from = spin(0, 1e4, 0, width=110)
+        self.sample_to = spin(0, 1e4, 0, width=110)
+        self.bg_from = spin(0, 1e4, 0, width=110)
+        self.bg_to = spin(0, 1e4, 0, width=110)
+        for box in (self.sample_from, self.sample_to, self.bg_from, self.bg_to):
+            box.setSuffix(" min")
+            box.valueChanged.connect(viewer._on_range_spin_changed)
+        for label, lo, hi in (("試料", self.sample_from, self.sample_to), ("背景", self.bg_from, self.bg_to)):
+            row = QHBoxLayout()
+            row.addWidget(lo)
+            row.addWidget(QLabel("–"))
+            row.addWidget(hi)
+            row.addStretch(1)
+            form.addRow(label, row)
+        row = QHBoxLayout()
+        full = QPushButton("試料を全範囲に戻す")
+        full.clicked.connect(viewer.reset_sample_range)
+        clear = QPushButton("背景を解除")
+        clear.clicked.connect(viewer.clear_background)
+        row.addWidget(full)
+        row.addWidget(clear)
+        row.addStretch(1)
+        form.addRow(row)
+        note = QLabel("背景の終わりが始まりより後でないときは、背景なしとして扱います。")
+        note.setWordWrap(True)
+        form.addRow(note)
+
+
 class SettingsWindow(QWidget):
     """ラベル・桁数・背景・転送・msconvert の設定。変えるとすぐ反映して保存する。"""
 

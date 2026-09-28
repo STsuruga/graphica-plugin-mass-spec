@@ -84,8 +84,8 @@ def test_open_shows_tic_and_the_average_of_all_scans(panel, mzml):
     run = panel.open_mzml(mzml)
     assert run is not None and panel.run_combo.count() == 1
     assert "10 スキャン" in panel.run_combo.currentText()
-    assert panel.sample_from.value() == pytest.approx(0.0)
-    assert panel.sample_to.value() == pytest.approx(9 / 60, abs=1e-3)
+    assert panel.range_window.sample_from.value() == pytest.approx(0.0)
+    assert panel.range_window.sample_to.value() == pytest.approx(9 / 60, abs=1e-3)
     assert panel.spectrum is not None and panel.spectrum["provenance"]["scans"] == 10
 
 
@@ -99,7 +99,7 @@ def test_sample_and_background_ranges_subtract(panel, mzml):
     near_300 = np.abs(s["mz"] - 300.0) < 0.05
     assert s["y"][near_300].max() == pytest.approx(0.0, abs=1e-6)
     assert s["y"].max() == pytest.approx(with_bg_peak, rel=0.01)
-    assert panel.bg_from.value() == pytest.approx(0.0) and panel.bg_to.value() == pytest.approx(2 / 60, abs=1e-3)
+    assert panel.range_window.bg_from.value() == pytest.approx(0.0) and panel.range_window.bg_to.value() == pytest.approx(2 / 60, abs=1e-3)
     panel.settings_window.subtract_check.setChecked(False)
     assert "背景" not in panel.spectrum["name"]
 
@@ -108,7 +108,7 @@ def test_clicking_a_scan_selects_that_scan(panel, mzml):
     panel.open_mzml(mzml)
     panel._on_scan_clicked(4.2 / 60)
     assert panel.spectrum["provenance"]["scans"] == 1
-    assert panel.sample_from.value() == pytest.approx(4 / 60, abs=1e-3)
+    assert panel.range_window.sample_from.value() == pytest.approx(4 / 60, abs=1e-3)
 
 
 def test_calculation_window_matches_and_overlays(panel, mzml):
@@ -339,3 +339,17 @@ def test_register_adds_panel_and_help(tmp_path):
     widget = api.panels[PANEL_NAME]["widget_factory"](ctx)
     assert widget.run_combo.count() == 0
     widget.close()
+
+
+def test_range_fields_live_in_the_detail_window(panel, mzml):
+    panel.open_mzml(mzml)
+    w = panel.range_window
+    assert not w.isVisible() and w.parent() is panel
+    w.sample_from.setValue(3 / 60)
+    w.sample_to.setValue(6 / 60)
+    panel.compute_spectrum()
+    assert panel.spectrum["provenance"]["scans"] == 4
+    assert panel.tic_plot.ranges["sample"] == pytest.approx((3 / 60, 6 / 60))
+    panel.reset_sample_range()
+    assert panel.spectrum["provenance"]["scans"] == 10
+    assert w.sample_to.value() == pytest.approx(9 / 60, abs=1e-3)
