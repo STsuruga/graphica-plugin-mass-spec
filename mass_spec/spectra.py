@@ -165,6 +165,32 @@ def select_label_peaks(peaks, x_range=None, top_n=10, min_relative=None, min_sep
     return sorted(chosen, key=lambda p: p.mz)
 
 
+ISOTOPE_SPACING = 1.00335
+
+
+def isotope_clusters(peaks, charges=(1, 2, 3), tolerance=0.015, tolerance_ppm=10.0):
+    """m/z の差が同位体の間隔(n × 1.003 / z、n = 1, 2)で続くピークを1つのシグナルにまとめる。
+
+    n = 2 は M+1 がしきい値より小さい Cl・Br の M+2 のため。隣り合うピークどうしだけを比べる。
+    """
+    clusters = []
+    for p in sorted(peaks, key=lambda q: q.mz):
+        if clusters:
+            last = clusters[-1][-1]
+            gap = p.mz - last.mz
+            tol = tolerance + last.mz * tolerance_ppm * 1e-6
+            if any(abs(gap - n * ISOTOPE_SPACING / z) <= tol for z in charges for n in (1, 2)):
+                clusters[-1].append(p)
+                continue
+        clusters.append([p])
+    return clusters
+
+
+def cluster_heads(peaks, **kwargs):
+    """各シグナルでいちばん強いピーク。"""
+    return [max(c, key=lambda p: p.height) for c in isotope_clusters(peaks, **kwargs)]
+
+
 @dataclass
 class LabelFormat:
     mz_decimals: int = 4

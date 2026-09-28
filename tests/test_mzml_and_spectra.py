@@ -142,3 +142,14 @@ def test_label_format():
     assert LabelFormat(mz_decimals=4, intensity="relative").label(523.24512, 50, 200) == "523.2451 (25.0%)"
     assert LabelFormat(mz_decimals=1, intensity="absolute", intensity_decimals=2).label(1.0, 12345, 1) == "1.0 (1.23e+04)"
     assert LabelFormat(ppm_decimals=2).ppm(-1.234) == "-1.23 ppm"
+
+
+def test_isotope_clusters_group_signals():
+    from mass_spec.spectra import cluster_heads, isotope_clusters
+    peaks = [Peak(450.0, 100, 0.05, 0), Peak(451.0034, 30, 0.05, 1), Peak(452.0068, 5, 0.05, 2),
+             Peak(500.0, 60, 0.05, 3), Peak(500.30, 50, 0.05, 4),             # 0.3 離れは別のシグナル
+             Peak(600.0, 40, 0.05, 5), Peak(600.5017, 45, 0.05, 6),           # 2 価の同位体
+             Peak(700.0, 50, 0.05, 7), Peak(701.998, 49, 0.05, 8)]            # Br の M+2
+    groups = [[p.mz for p in c] for c in isotope_clusters(peaks)]
+    assert groups == [[450.0, 451.0034, 452.0068], [500.0], [500.30], [600.0, 600.5017], [700.0, 701.998]]
+    assert [p.mz for p in cluster_heads(peaks)] == [450.0, 500.0, 500.30, 600.5017, 700.0]

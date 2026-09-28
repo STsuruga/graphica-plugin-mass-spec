@@ -1,4 +1,5 @@
 """MS ビューアのメニューから開く別ウィンドウ: 「同位体パターンの照合」「時間範囲の詳細設定」「表示設定」。
+どれも本体を閉じたときのアプリの終了を妨げない(WA_QuitOnClose を切る)。
 
 どちらもビューアの子ウィンドウで、ビューアが持つ窓口 ctx を通して本体とやりとりする(ビューアと一緒に閉じる)。
 """
@@ -31,6 +32,7 @@ class CalcWindow(QWidget):
 
     def __init__(self, viewer):
         super().__init__(viewer, Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.viewer = viewer
         s = viewer.settings
         self.setWindowTitle("同位体パターンの照合 - MS パック")
@@ -139,6 +141,7 @@ class RangeWindow(QWidget):
 
     def __init__(self, viewer):
         super().__init__(viewer, Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.viewer = viewer
         self.setWindowTitle("時間範囲の詳細設定 - MS パック")
         form = QFormLayout(self)
@@ -175,6 +178,7 @@ class SettingsWindow(QWidget):
 
     def __init__(self, viewer):
         super().__init__(viewer, Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.viewer = viewer
         s = viewer.settings
         self.setWindowTitle("表示設定 - MS パック")

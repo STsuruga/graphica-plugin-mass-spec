@@ -212,7 +212,11 @@ def test_y_axis_uses_superscript_powers_from_1e4():
 def test_labels_use_the_share_of_the_strongest_peak_in_view(spectrum):
     spectrum.label_percent = 20.0
     spectrum.update_labels()
-    assert [t[:5] for t in spectrum.labeled_texts()] == ["450.0", "451.0", "500.0"]   # 5% の 550 は付かない
+    # 451 は 450 と同じシグナル(同位体)で、全体表示ではラベルが 450 のラベルと重なるので出さない。5% の 550 は付かない
+    assert [t[:5] for t in spectrum.labeled_texts()] == ["450.0", "500.0"]
+    spectrum.set_view((448.0, 453.0))
+    assert [t[:5] for t in spectrum.labeled_texts()] == ["450.0", "451.0"]   # 広げると重ならないので出る
+    spectrum.reset_view()
     spectrum.label_mode = "none"
     spectrum.update_labels()
     assert spectrum.labeled_texts() == []

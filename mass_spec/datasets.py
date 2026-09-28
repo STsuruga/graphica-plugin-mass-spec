@@ -7,7 +7,7 @@ from matplotlib.colors import to_hex
 from graphica.plugin import Dataset
 
 from .plot_types import STICK
-from .spectra import LabelFormat, compact_zeros, select_label_peaks
+from .spectra import LabelFormat, cluster_heads, compact_zeros, select_label_peaks
 
 PLUGIN_NAME = "mass_spec"
 MZ_COL = "m/z"
@@ -72,8 +72,10 @@ def centroid_dataset(name, peaks, color, fmt=None, label_top_n=None, label_min_r
     kept = [p for p in peaks if p.height >= base * min_relative / 100.0]
     if len(kept) > MAX_LABELED_POINTS:
         kept = sorted(sorted(kept, key=lambda p: p.height, reverse=True)[:MAX_LABELED_POINTS], key=lambda p: p.mz)
-    labeled = {id(p) for p in select_label_peaks(kept, top_n=label_top_n, min_relative=label_min_relative,
-                                                  pinned=pinned)}
+    # 本体の点のラベルは重なりを避けないので、同位体でまとめたシグナルごとにいちばん強いピーク(と固定したもの)だけ
+    candidates = select_label_peaks(kept, top_n=label_top_n, min_relative=label_min_relative, pinned=pinned)
+    pinned_peaks = [min(kept, key=lambda p: abs(p.mz - m)) for m in pinned]
+    labeled = {id(p) for p in cluster_heads(candidates)} | {id(p) for p in pinned_peaks}
     labels = [fmt.label(p.mz, p.height, base) if id(p) in labeled else "" for p in kept]
     return stick_dataset(name, [p.mz for p in kept], [p.height for p in kept], labels, color,
                          source_file, provenance, labels_only)

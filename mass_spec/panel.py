@@ -106,6 +106,8 @@ class ViewerWindow(QWidget):
 
     def __init__(self, panel):
         super().__init__(panel, Qt.WindowType.Window)
+        # 開いたままでも本体を閉じたらアプリが終わるように、終了の判断に数えない
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.setWindowTitle("MS ビューア - Graphica")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

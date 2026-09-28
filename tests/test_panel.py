@@ -456,3 +456,20 @@ def test_old_label_mode_setting_falls_back_to_percent(ctx):
     from mass_spec.settings import load_settings
     settings = load_settings(ctx.data_dir)
     assert settings["label_mode"] == "percent" and settings["label_percent"] == 20.0
+
+
+def test_plugin_windows_do_not_keep_the_app_running(panel):
+    from PySide6.QtCore import Qt
+    for window in (panel.window_, panel.calc_window, panel.settings_window, panel.range_window):
+        assert not window.testAttribute(Qt.WidgetAttribute.WA_QuitOnClose)
+
+
+def test_transferred_centroid_labels_only_signal_heads(panel, ctx, tmp_path):
+    from synthetic import gaussian_peaks, tof_grid
+    grid = tof_grid(400.0, 600.0)
+    y = gaussian_peaks(grid, [450.0, 451.00335, 452.0067, 500.0], [100.0, 40.0, 25.0, 60.0], 12000)
+    path = write_mzml(tmp_path / "iso.mzML", [(0.0, grid, y), (1.0, grid, y)])
+    _open_all(panel, path)
+    panel.transfer_centroid()
+    labels = [t for t in ctx.datasets()[-1].df["ラベル"] if t]
+    assert [t[:5] for t in labels] == ["450.0", "500.0"]

@@ -12,7 +12,7 @@ from matplotlib.patches import Rectangle
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCursor, QPalette
 
-from .spectra import LabelFormat, Peak, select_label_peaks
+from .spectra import LabelFormat, Peak, cluster_heads, select_label_peaks
 
 WHEEL_FACTOR = 1.25
 CLICK_PIXELS = 4       # これより動かなければドラッグでなくクリック
@@ -508,13 +508,38 @@ class SpectrumPlot(InteractivePlot):
                 pinned=[m for m in self.pinned if x0 <= m <= x1])
             visible = [p.height for p in self.peaks if x0 <= p.mz <= x1]
             base = max(visible) if visible else None
-            for p in chosen:
+            # 同位体でまとめたシグナルごとにいちばん強いピークと、固定したピークは必ず出す。
+            # ほかは、強い順に、出したラベルともスペクトルの線とも重ならないときだけ出す
+            must = {id(p) for p in cluster_heads(chosen)}
+            pinned_ids = {id(p) for p in chosen if self._is_pinned(p.mz)}
+            must |= pinned_ids
+            order = sorted(chosen, key=lambda p: (id(p) not in must, -p.height))
+            renderer = self.figure.canvas.get_renderer()
+            boxes = []
+            for p in order:
                 text = self.label_format.label(p.mz, p.height, base)
-                pinned = any(abs(p.mz - m) / p.mz < 5e-6 for m in self.pinned)
-                self._label_artists.append(self.ax.annotate(
+                artist = self.ax.annotate(
                     text, (p.mz, p.height), textcoords="offset points", xytext=(0, 3), ha="center",
-                    fontsize=7.5, color=self.foreground, fontweight="bold" if pinned else "normal", clip_on=True))
+                    fontsize=7.5, color=self.foreground, fontweight="bold" if id(p) in pinned_ids else "normal",
+                    clip_on=True)
+                box = artist.get_window_extent(renderer)
+                if id(p) not in must and (any(box.overlaps(b) for b in boxes) or self._covers_data(box)):
+                    artist.remove()
+                    continue
+                boxes.append(box)
+                self._label_artists.append(artist)
+            self._label_artists.sort(key=lambda a: a.xy[0])
         self.draw_idle()
+
+    def _is_pinned(self, mz):
+        return any(abs(mz - m) / mz < 5e-6 for m in self.pinned)
+
+    def _covers_data(self, box):
+        """ラベルの枠の下の端より、その横幅の中のスペクトルが高ければ重なっている。"""
+        inverse = self.ax.transData.inverted()
+        (left, bottom), (right, _top) = inverse.transform([(box.x0, box.y0), (box.x1, box.y1)])
+        inside = (self.mz >= left) & (self.mz <= right)
+        return bool(inside.any() and np.nanmax(self.y[inside]) > bottom)
 
     def labeled_texts(self):
         return [a.get_text() for a in self._label_artists]
