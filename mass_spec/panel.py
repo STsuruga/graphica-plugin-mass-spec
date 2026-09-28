@@ -4,6 +4,7 @@
 TIC(1段目)、選んだ時間範囲のスペクトル(2段目)、実測のコピーや計算パターンを1つずつ置く枠(3段目)。
 照合・時間範囲・表示設定はメニューから別ウィンドウで開く(windows.py)。
 """
+import html
 import os
 import time
 
@@ -11,7 +12,7 @@ import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import to_hex
 from PySide6.QtCore import QProcess, Qt, QTimer
-from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMenuBar, QMessageBox,
     QPushButton, QScrollArea, QSplitter, QSpinBox, QVBoxLayout, QWidget,
@@ -42,12 +43,38 @@ RECOMPUTE_DELAY_MS = 250
 RUN_COLORS = [to_hex(c) for c in colormaps["tab10"].colors]
 
 
-def _header(text):
-    """各段の題名の帯(DataAnalysis の窓の題名に似せる)。色は本体のテーマのパレットから取る。"""
-    label = QLabel(text)
-    label.setStyleSheet("QLabel { background: palette(highlight); color: palette(highlighted-text);"
-                        " font-weight: 600; padding: 2px 6px; }")
-    return label
+class TitleLabel(QLabel):
+    """各段の題名。段の名前を太字、測定名などを薄い色で続け、下に細い線を引く。色は本体のテーマのパレットから取る。"""
+
+    def __init__(self, title):
+        super().__init__()
+        self.setTextFormat(Qt.TextFormat.RichText)
+        self.setStyleSheet("QLabel { padding: 6px 2px 4px 2px; border: none;"
+                           " border-bottom: 1px solid palette(mid); }")
+        self.set_title(title)
+
+    def set_title(self, title, detail="", dot_color=None):
+        self.plain = f"{title} - {detail}" if detail else title
+        muted = self.palette().color(QPalette.ColorRole.PlaceholderText).name()
+        dot = f'<span style="color:{dot_color}">●</span>&nbsp;' if dot_color else ""
+        rest = f'&nbsp;&nbsp;<span style="color:{muted}">{html.escape(detail)}</span>' if detail else ""
+        self.setText(f'{dot}<span style="font-weight:600">{html.escape(title)}</span>{rest}')
+
+
+class PopoutWindow(QWidget):
+    """ビューアを移して表示する普通のウィンドウ(ドックと違い最大化できる)。閉じるとドックに戻す。"""
+
+    def __init__(self, panel):
+        super().__init__(panel, Qt.WindowType.Window)
+        self.panel = panel
+        self.setWindowTitle(f"{PANEL_NAME} - MS パック")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+    def closeEvent(self, event):
+        if self.panel.popout is self:
+            self.panel.dock_back()
+        super().closeEvent(event)
 
 
 def _color_icon(color):
@@ -66,7 +93,6 @@ HELP_TEXT = """\
 MS ビューア(MS スペクトル パネル)
 
 左の一覧: チェックでその測定の TIC を表示、名前をクリックでその測定を2段目の対象にする。
-左の一覧: チェックでその測定の TIC を表示、名前をクリックでその測定を2段目の対象にする。
 1段目 TIC: 左ドラッグで試料の時間範囲、Shift+左ドラッグで背景の範囲。帯の端をドラッグで伸縮、帯の中で移動。
 クリックでその時刻の1スキャン。
 2段目 スペクトル: 選んだ範囲の平均(背景を引く設定なら差し引き後)。左ドラッグでその m/z 範囲に拡大、
@@ -79,6 +105,7 @@ Ctrl+左ドラッグで矩形の拡大、Shift+左ドラッグで Δm/z を測�
 
 解析 ▸ 同位体パターンの照合 で組成式から同位体パターンと付加イオンを計算し、実測と照合する(結果は枠や本体のプロットへ)。
 表示 ▸ 表示設定 でラベルの本数・桁数、背景、転送の設定。
+表示 ▸ 別ウィンドウで開く で、最大化できる普通のウィンドウに移す(閉じるとドックに戻る)。
 """
 
 
@@ -111,10 +138,26 @@ class MassSpecPanel(QWidget):
 
     # ================================================================ 画面
     def _build(self):
-        outer = QVBoxLayout(self)
+        # ビューアの中身は content にまとめ、別ウィンドウで開くときはそれごと移す
+        dock_layout = QVBoxLayout(self)
+        dock_layout.setContentsMargins(0, 0, 0, 0)
+        self.content = QWidget()
+        dock_layout.addWidget(self.content, 1)
+        self.popout = None
+        self.placeholder = QWidget()
+        placeholder_layout = QVBoxLayout(self.placeholder)
+        placeholder_layout.addWidget(QLabel("MS ビューアは別ウィンドウで表示しています。"))
+        back = QPushButton("ドックに戻す")
+        back.clicked.connect(self.dock_back)
+        placeholder_layout.addWidget(back, 0, Qt.AlignmentFlag.AlignLeft)
+        placeholder_layout.addStretch(1)
+        self.placeholder.hide()
+        dock_layout.addWidget(self.placeholder, 1)
+
+        outer = QVBoxLayout(self.content)
         outer.setContentsMargins(4, 0, 4, 4)
         outer.setSpacing(4)
-        self.menu_bar = QMenuBar(self)
+        self.menu_bar = QMenuBar(self.content)
         outer.setMenuBar(self.menu_bar)
         self._build_menus()
 
@@ -152,7 +195,7 @@ class MassSpecPanel(QWidget):
         tic_layout = QVBoxLayout(tic_box)
         tic_layout.setContentsMargins(0, 0, 0, 0)
         tic_layout.setSpacing(0)
-        self.tic_header = _header("クロマトグラム")
+        self.tic_header = TitleLabel("クロマトグラム")
         tic_layout.addWidget(self.tic_header)
         self.tic_plot = TicPlot()
         self.tic_plot.range_changing.connect(self._on_tic_range_changing)
@@ -166,7 +209,7 @@ class MassSpecPanel(QWidget):
         spectrum_layout = QVBoxLayout(spectrum_box)
         spectrum_layout.setContentsMargins(0, 0, 0, 0)
         spectrum_layout.setSpacing(0)
-        self.spectrum_header = _header("スペクトル")
+        self.spectrum_header = TitleLabel("スペクトル")
         spectrum_layout.addWidget(self.spectrum_header)
         self.spectrum_plot = SpectrumPlot()
         self.spectrum_plot.hover_text.connect(self._show_readout)
@@ -182,7 +225,7 @@ class MassSpecPanel(QWidget):
         pane_box_layout = QVBoxLayout(pane_box)
         pane_box_layout.setContentsMargins(0, 0, 0, 0)
         pane_box_layout.setSpacing(0)
-        self.pane_header = _header("比較スペクトル")
+        self.pane_header = TitleLabel("比較スペクトル")
         pane_box_layout.addWidget(self.pane_header)
         self.pane_area = QScrollArea()
         self.pane_area.setWidgetResizable(True)
@@ -225,6 +268,10 @@ class MassSpecPanel(QWidget):
         m.addSeparator()
         m.addAction("時間範囲の詳細設定…", lambda: self._open_window(self.range_window))
         m.addAction("表示設定…", self.open_settings_window)
+        m.addSeparator()
+        self.popout_action = m.addAction("別ウィンドウで開く(最大化できます)", self.pop_out)
+        self.dock_back_action = m.addAction("ドックに戻す", self.dock_back)
+        self.dock_back_action.setEnabled(False)
         m = self.menu_bar.addMenu("解析")
         m.addAction("同位体パターンの照合…", self.open_calc_window)
         m = self.menu_bar.addMenu("転送")
@@ -249,6 +296,31 @@ class MassSpecPanel(QWidget):
 
     def open_settings_window(self):
         self._open_window(self.settings_window)
+
+    def pop_out(self):
+        """ビューアを普通のウィンドウに移す(ドックはフロートしても最大化できないため)。"""
+        if self.popout is not None:
+            self._open_window(self.popout)
+            return
+        self.popout = PopoutWindow(self)
+        self.popout.layout().addWidget(self.content)
+        self.placeholder.show()
+        self.popout_action.setEnabled(False)
+        self.dock_back_action.setEnabled(True)
+        self.popout.resize(max(self.content.width(), 1200), max(self.content.height(), 800))
+        self._open_window(self.popout)
+
+    def dock_back(self):
+        window, self.popout = self.popout, None
+        if window is None:
+            return
+        self.layout().insertWidget(0, self.content, 1)
+        self.content.show()
+        self.placeholder.hide()
+        self.popout_action.setEnabled(True)
+        self.dock_back_action.setEnabled(False)
+        window.hide()
+        window.deleteLater()
 
     # ================================================================ 設定
     def _save(self):
@@ -427,9 +499,9 @@ class MassSpecPanel(QWidget):
         if current is not None:
             self._show_ranges(self.ranges[current.path])
             sign = {1: "+", -1: "−"}.get(current.polarity(), "±")
-            self.tic_header.setText(f"クロマトグラム - {self._run_name(current)}: TIC {sign}")
+            self.tic_header.set_title("クロマトグラム", f"{self._run_name(current)}: TIC {sign}", current.color)
         else:
-            self.tic_header.setText("クロマトグラム")
+            self.tic_header.set_title("クロマトグラム")
 
     def _on_run_item_changed(self, _item):
         self.redraw_tics()
@@ -561,7 +633,7 @@ class MassSpecPanel(QWidget):
             self.redraw_tics(keep_view=False)
             self.spectrum_plot.clear()
             self.spectrum = None
-            self.spectrum_header.setText("スペクトル")
+            self.spectrum_header.set_title("スペクトル")
             self._status("測定を開いてください")
 
     # ================================================================ 範囲とスペクトル
@@ -665,7 +737,7 @@ class MassSpecPanel(QWidget):
         if not scans:
             self.spectrum = None
             self.spectrum_plot.clear()
-            self.spectrum_header.setText(f"スペクトル - {self._run_name(run)}(選んだ時間範囲にスキャンがありません)")
+            self.spectrum_header.set_title("スペクトル", f"{self._run_name(run)}(選んだ時間範囲にスキャンがありません)")
             self._status("選んだ時間範囲にスキャンがありません")
             return
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -693,7 +765,7 @@ class MassSpecPanel(QWidget):
         shown_mz, shown_y = compact_zeros(mz, y)
         self.spectrum_plot.set_spectrum(shown_mz, shown_y, peaks, keep_view=keep_view)
         average = f"{len(scans)} スキャンの平均" if len(scans) > 1 else "1 スキャン"
-        self.spectrum_header.setText(f"スペクトル - {name}({average})")
+        self.spectrum_header.set_title("スペクトル", f"{name}({average})")
         self._status(f"{name}({len(scans)} スキャンの平均"
                      + (f"、背景 {len(bg_scans)} スキャン" if bg_scans else "") + ")")
         if self.calc is not None:
@@ -980,4 +1052,6 @@ class MassSpecPanel(QWidget):
     def closeEvent(self, event):
         if self._process is not None:
             self.cancel_conversion()
+        if self.popout is not None:
+            self.dock_back()
         super().closeEvent(event)

@@ -364,16 +364,36 @@ def test_run_list_checks_toggle_tics_and_click_focuses(panel, tmp_path):
     assert panel.run_list.count() == 2 and panel.current_run() is second
     assert first.color != second.color and first.color.startswith("#")
     assert len(panel.tic_plot.lines) == 2
-    assert panel.tic_header.text() == "クロマトグラム - neg: TIC −"
-    assert panel.spectrum_header.text().startswith("スペクトル - neg ")
+    assert panel.tic_header.plain == "クロマトグラム - neg: TIC −"
+    assert panel.spectrum_header.plain.startswith("スペクトル - neg ")
     panel.run_list.item(0).setCheckState(Qt.CheckState.Unchecked)
     assert len(panel.tic_plot.lines) == 1
     panel.run_list.setCurrentRow(0)
     assert panel.current_run() is first
     assert panel.spectrum["run"] is first and panel.spectrum["provenance"]["scans"] == 10
-    assert panel.tic_header.text() == "クロマトグラム - pos: TIC +"
-    assert panel.pane_header.text() == "比較スペクトル"
+    assert panel.tic_header.plain == "クロマトグラム - pos: TIC +"
+    assert panel.pane_header.plain == "比較スペクトル"
     panel.close_current_run()
     assert panel.run_list.count() == 1 and panel.current_run() is second
     panel.close_current_run()
-    assert panel.spectrum is None and panel.tic_header.text() == "クロマトグラム"
+    assert panel.spectrum is None and panel.tic_header.plain == "クロマトグラム"
+
+
+def test_pop_out_to_a_window_and_back(panel, mzml):
+    panel.open_mzml(mzml)
+    panel.pop_out()
+    window = panel.popout
+    assert window is not None and panel.content.parent() is window
+    assert window.isWindow()
+    assert panel.placeholder.isVisibleTo(panel) and not panel.popout_action.isEnabled()
+    window.close()
+    assert panel.popout is None and panel.content.parent() is panel
+    assert not panel.placeholder.isVisibleTo(panel) and panel.popout_action.isEnabled()
+    assert panel.spectrum is not None
+
+
+def test_title_labels_show_name_and_detail(panel, mzml):
+    panel.open_mzml(mzml)
+    assert panel.tic_header.plain == "クロマトグラム - sample: TIC +"
+    assert "●" in panel.tic_header.text()
+    assert panel.spectrum_header.plain.startswith("スペクトル - sample ")
