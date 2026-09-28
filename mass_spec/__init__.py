@@ -8,14 +8,14 @@ HELP_MENU = "MS パック: 使い方"
 
 
 def _open_viewer(ctx):
-    """このタブの MS ビューアを別ウィンドウで開く。ビューアはタブごとのパネルが持っている。"""
+    """このタブの MS ビューアのウィンドウを開く。ビューアはタブごとのパネルが持っている。"""
     from .panel import viewer_for
     viewer = viewer_for(ctx)
     if viewer is None:
         ctx.show_error("このタブの MS ビューアが見つかりません。プラグイン ▸ パネル ▸ MS スペクトル から開いてください。",
                        "MS パック")
         return
-    viewer.pop_out()
+    viewer.open_window()
 
 
 def _show_help(ctx):

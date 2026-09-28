@@ -13,10 +13,10 @@ import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import to_hex
 from PySide6.QtCore import QProcess, Qt, QTimer
-from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPalette, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMenuBar, QMessageBox,
-    QPushButton, QScrollArea, QSplitter, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QDockWidget, QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMenuBar, QMessageBox,
+    QPushButton, QScrollArea, QSplitter, QSplitterHandle, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import convert
@@ -62,20 +62,70 @@ class TitleLabel(QLabel):
         self.setText(f'{dot}<span style="font-weight:500">{html.escape(title)}</span>{rest}')
 
 
-class PopoutWindow(QWidget):
-    """ビューアを移して表示する普通のウィンドウ(ドックと違い最大化できる)。閉じるとドックに戻す。"""
+class ThinHandle(QSplitterHandle):
+    """分割の取っ手。つかめる幅は保ったまま、中央に 1px の線だけを描く(本体のテーマでは太い帯になる)。"""
+
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        role = QPalette.ColorRole.Highlight if self.underMouse() else QPalette.ColorRole.Midlight
+        painter.setPen(self.palette().color(role))
+        rect = self.rect()
+        if self.orientation() == Qt.Orientation.Horizontal:
+            x = rect.center().x()
+            painter.drawLine(x, rect.top(), x, rect.bottom())
+        else:
+            y = rect.center().y()
+            painter.drawLine(rect.left(), y, rect.right(), y)
+        painter.end()
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)
+
+
+class ThinSplitter(QSplitter):
+    def __init__(self, orientation):
+        super().__init__(orientation)
+        self.setHandleWidth(7)
+        self.setChildrenCollapsible(False)
+
+    def createHandle(self):
+        return ThinHandle(self.orientation(), self)
+
+
+class ViewerWindow(QWidget):
+    """MS ビューアのウィンドウ。閉じても中身は捨てずに隠すだけで、次に開くと同じ状態で戻る。"""
 
     def __init__(self, panel):
         super().__init__(panel, Qt.WindowType.Window)
-        self.panel = panel
-        self.setWindowTitle(f"{PANEL_NAME} - MS パック")
+        self.setWindowTitle("MS ビューア - Graphica")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        self._placed = False
 
-    def closeEvent(self, event):
-        if self.panel.popout is self:
-            self.panel.dock_back()
-        super().closeEvent(event)
+    def open(self):
+        if not self._placed:
+            self._placed = True
+            screen = self.screen().availableGeometry() if self.screen() else None
+            if screen is not None:
+                width, height = int(screen.width() * 0.85), int(screen.height() * 0.85)
+                self.setGeometry(screen.x() + (screen.width() - width) // 2,
+                                 screen.y() + (screen.height() - height) // 2, width, height)
+            else:
+                self.resize(1280, 860)
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
 
 def _color_icon(color):
@@ -99,7 +149,7 @@ MSCONVERT_MISSING = (
     "別の場所に入れた場合は、次の画面で msconvert.exe を選べます。")
 
 HELP_TEXT = """\
-MS ビューア(MS スペクトル パネル)
+MS ビューア
 
 左の一覧: チェックでその測定の TIC を表示、名前をクリックでその測定を2段目の対象にする。
 1段目 TIC: 左ドラッグで試料の時間範囲、Shift+左ドラッグで背景の範囲。帯の端をドラッグで伸縮、帯の中で移動。
@@ -114,7 +164,6 @@ Ctrl+左ドラッグで矩形の拡大、Shift+左ドラッグで Δm/z を測�
 
 解析 ▸ 同位体パターンの照合 で組成式から同位体パターンと付加イオンを計算し、実測と照合する(結果は枠や本体のプロットへ)。
 表示 ▸ 表示設定 でラベルの本数・桁数、背景、転送の設定。
-表示 ▸ 別ウィンドウで開く で、最大化できる普通のウィンドウに移す(閉じるとドックに戻る)。
 """
 
 
@@ -148,28 +197,27 @@ class MassSpecPanel(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # ドックは小さくて見づらいので、既定ではドックを表示したら別ウィンドウに移す
-        if self.settings["open_as_window"] and self.popout is None:
-            QTimer.singleShot(0, self.pop_out)
+        # ビューアはウィンドウだけで使う。本体がこのパネルのドックを表示したら、ドックは隠してウィンドウを開く
+        # (プラグインがタブごとの ctx を持てるのはパネルだけなので、パネル自体は登録しておく)
+        QTimer.singleShot(0, self._show_window_instead_of_dock)
+
+    def _show_window_instead_of_dock(self):
+        dock = self.parentWidget()
+        if isinstance(dock, QDockWidget):
+            dock.hide()
+        self.open_window()
 
     # ================================================================ 画面
     def _build(self):
-        # ビューアの中身は content にまとめ、別ウィンドウで開くときはそれごと移す
-        dock_layout = QVBoxLayout(self)
-        dock_layout.setContentsMargins(0, 0, 0, 0)
+        # 中身はすべてビューアのウィンドウに置く。パネル(ドック側)は空のまま
+        self.window_ = ViewerWindow(self)
         self.content = QWidget()
-        dock_layout.addWidget(self.content, 1)
-        self.popout = None
-        self.placeholder = QWidget()
-        placeholder_layout = QVBoxLayout(self.placeholder)
-        placeholder_layout.addWidget(QLabel("MS ビューアは別ウィンドウで表示しています。"))
-        back = QPushButton("ドックに戻す")
-        back.clicked.connect(self.dock_back)
-        placeholder_layout.addWidget(back, 0, Qt.AlignmentFlag.AlignLeft)
-        placeholder_layout.addStretch(1)
-        self.placeholder.hide()
-        dock_layout.addWidget(self.placeholder, 1)
+        self.window_.layout().addWidget(self.content)
 
+        # 背景をグラフと同じ色にそろえる(周りだけ灰色だと段の境目が太い帯に見える)
+        self.content.setObjectName("msViewerContent")
+        self.content.setStyleSheet("#msViewerContent { background: palette(base); }")
+        self.content.setAutoFillBackground(True)
         outer = QVBoxLayout(self.content)
         outer.setContentsMargins(4, 0, 4, 4)
         outer.setSpacing(4)
@@ -191,18 +239,21 @@ class MassSpecPanel(QWidget):
         self.last_status = ""
 
         # 左に測定の一覧、右に3段のグラフ
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter = ThinSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setHandleWidth(7)
         outer.addWidget(self.main_splitter, 1)
         self.run_list = QListWidget()
         self.run_list.setMinimumWidth(140)
+        self.run_list.setFrameShape(QFrame.Shape.NoFrame)
         self.run_list.setToolTip("チェックで TIC を表示、名前をクリックでその測定のスペクトルを2段目に出す")
         self.run_list.currentRowChanged.connect(self._on_run_selected)
         self.run_list.itemChanged.connect(self._on_run_item_changed)
         self.main_splitter.addWidget(self.run_list)
 
-        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter = ThinSplitter(Qt.Orientation.Vertical)
         self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(7)
         self.main_splitter.addWidget(self.splitter)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setSizes([170, 800])
@@ -245,6 +296,7 @@ class MassSpecPanel(QWidget):
         pane_box_layout.addWidget(self.pane_header)
         self.pane_area = QScrollArea()
         self.pane_area.setWidgetResizable(True)
+        self.pane_area.setFrameShape(QFrame.Shape.NoFrame)
         self.pane_container = QWidget()
         self.pane_layout = QVBoxLayout(self.pane_container)
         self.pane_layout.setContentsMargins(0, 0, 0, 0)
@@ -284,10 +336,7 @@ class MassSpecPanel(QWidget):
         m.addSeparator()
         m.addAction("時間範囲の詳細設定…", lambda: self._open_window(self.range_window))
         m.addAction("表示設定…", self.open_settings_window)
-        m.addSeparator()
-        self.popout_action = m.addAction("別ウィンドウで開く(最大化できます)", self.pop_out)
-        self.dock_back_action = m.addAction("ドックに戻す", self.dock_back)
-        self.dock_back_action.setEnabled(False)
+
         m = self.menu_bar.addMenu("解析")
         m.addAction("同位体パターンの照合…", self.open_calc_window)
         m = self.menu_bar.addMenu("転送")
@@ -313,36 +362,8 @@ class MassSpecPanel(QWidget):
     def open_settings_window(self):
         self._open_window(self.settings_window)
 
-    def pop_out(self):
-        """ビューアを普通のウィンドウに移す(ドックはフロートしても最大化できないため)。"""
-        if self.popout is not None:
-            self._open_window(self.popout)
-            return
-        self.popout = PopoutWindow(self)
-        self.popout.layout().addWidget(self.content)
-        self.placeholder.show()
-        self.popout_action.setEnabled(False)
-        self.dock_back_action.setEnabled(True)
-        screen = self.screen().availableGeometry() if self.screen() else None
-        if screen is not None:
-            width, height = int(screen.width() * 0.85), int(screen.height() * 0.85)
-            self.popout.setGeometry(screen.x() + (screen.width() - width) // 2,
-                                    screen.y() + (screen.height() - height) // 2, width, height)
-        else:
-            self.popout.resize(1280, 860)
-        self._open_window(self.popout)
-
-    def dock_back(self):
-        window, self.popout = self.popout, None
-        if window is None:
-            return
-        self.layout().insertWidget(0, self.content, 1)
-        self.content.show()
-        self.placeholder.hide()
-        self.popout_action.setEnabled(True)
-        self.dock_back_action.setEnabled(False)
-        window.hide()
-        window.deleteLater()
+    def open_window(self):
+        self.window_.open()
 
     # ================================================================ 設定
     def _save(self):
@@ -1074,6 +1095,5 @@ class MassSpecPanel(QWidget):
     def closeEvent(self, event):
         if self._process is not None:
             self.cancel_conversion()
-        if self.popout is not None:
-            self.dock_back()
+        self.window_.close()
         super().closeEvent(event)

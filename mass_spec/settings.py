@@ -28,7 +28,6 @@ DEFAULTS = {
     "detect_percent": 0.5,
     "pane_count": 3,
     "sync_panes": True,
-    "open_as_window": True,
 }
 
 

@@ -283,10 +283,10 @@ def test_open_d_converts_once_then_uses_the_cache(panel, ctx, tmp_path):
     panel.settings["msconvert_path"] = sys.executable
     d = _fake_d(tmp_path)
     panel.open_d(str(d))
-    assert panel.progress_row.isVisibleTo(panel) and panel.cancel_action.isEnabled()
+    assert panel.progress_row.isVisibleTo(panel.window_) and panel.cancel_action.isEnabled()
     assert "変換中" in panel.progress_label.text()
     _wait(lambda: panel._process is None)
-    assert not panel.progress_row.isVisibleTo(panel)
+    assert not panel.progress_row.isVisibleTo(panel.window_)
     assert panel.run_list.count() == 1
     assert panel.run_list.currentItem().text() == "measure"
     calls = (d / "calls.txt").read_text().splitlines()
@@ -337,7 +337,7 @@ def test_register_adds_panel_and_help(tmp_path):
     ctx = FakePluginContext(plugin_name="mass_spec", data_dir=str(tmp_path))
     action = next(a for a in api.menu_actions if a.text == HELP_MENU)
     action.callback(ctx)
-    assert "MS スペクトル" in ctx.messages[-1][2]
+    assert "MS ビューアを開く" in ctx.messages[-1][2]
     widget = api.panels[PANEL_NAME]["widget_factory"](ctx)
     assert widget.run_list.count() == 0
     widget.close()
@@ -379,18 +379,17 @@ def test_run_list_checks_toggle_tics_and_click_focuses(panel, tmp_path):
     assert panel.spectrum is None and panel.tic_header.plain == "クロマトグラム"
 
 
-def test_pop_out_to_a_window_and_back(panel, mzml):
+def test_viewer_lives_in_its_own_window(panel, mzml):
     panel.open_mzml(mzml)
-    panel.pop_out()
-    window = panel.popout
-    assert window is not None and panel.content.parent() is window
-    assert window.isWindow()
-    assert panel.placeholder.isVisibleTo(panel) and not panel.popout_action.isEnabled()
-    window.close()
-    assert panel.popout is None and panel.content.parent() is panel
-    assert not panel.placeholder.isVisibleTo(panel) and panel.popout_action.isEnabled()
-    assert panel.spectrum is not None
-
+    assert panel.content.window() is panel.window_ and panel.window_.isWindow()
+    panel.open_window()
+    assert panel.window_.isVisible()
+    panel.window_.close()
+    assert not panel.window_.isVisible()
+    panel.open_window()
+    assert panel.window_.isVisible() and panel.spectrum is not None and panel.run_list.count() == 1
+    menus = [a.text() for a in panel.menu_bar.actions()[1].menu().actions()]
+    assert not any("ドック" in m for m in menus)
 
 def test_title_labels_show_name_and_detail(panel, mzml):
     panel.open_mzml(mzml)
@@ -414,20 +413,25 @@ def test_open_menu_opens_this_tabs_viewer_as_a_window(tmp_path):
     viewer = api.panels[PANEL_NAME]["widget_factory"](ctx)
     other = api.panels[PANEL_NAME]["widget_factory"](other_ctx)
     open_action.callback(ctx)
-    assert viewer.popout is not None and viewer.popout.isVisible()
-    assert other.popout is None
+    assert viewer.window_.isVisible()
+    assert not other.window_.isVisible()
     viewer.close()
     other.close()
 
 
-@pytest.mark.parametrize("open_as_window", [True, False])
-def test_showing_the_panel_pops_out_by_default(ctx, open_as_window):
+def test_showing_the_panel_hides_the_dock_and_opens_the_window(ctx):
+    from PySide6.QtWidgets import QDockWidget, QMainWindow
+
     from mass_spec.panel import MassSpecPanel
-    from mass_spec.settings import DEFAULTS, save_settings
-    save_settings(ctx.data_dir, dict(DEFAULTS, open_as_window=open_as_window))
+    main = QMainWindow()
+    dock = QDockWidget("MS スペクトル", main)
     viewer = MassSpecPanel(ctx)
-    viewer.show()
+    dock.setWidget(viewer)
+    main.show()
+    dock.show()
     for _ in range(5):
         QApplication.processEvents()
-    assert (viewer.popout is not None) == open_as_window
+    assert not dock.isVisible()
+    assert viewer.window_.isVisible()
     viewer.close()
+    main.close()
