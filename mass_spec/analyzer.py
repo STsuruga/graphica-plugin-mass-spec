@@ -23,8 +23,8 @@ PARAM_SCHEMA = [
     {"name": "preset", "label": "付加イオン", "type": "choice", "default": PRESET_POSITIVE,
      "choices": [PRESET_POSITIVE, PRESET_NEGATIVE, PRESET_NONE]},
     {"name": "extra_adducts", "label": "追加の付加イオン(例: [2M+Na]+, [M+2H]2+)", "type": "str", "default": ""},
-    {"name": "resolution", "label": "分解能 R(0 = 実測から)", "type": "float", "default": 0.0,
-     "min": 0.0, "max": 1e7, "decimals": 0},
+    {"name": "fwhm", "label": "計算パターンの半値全幅 (m/z)", "type": "float", "default": 0.1,
+     "min": 0.0001, "max": 100.0, "decimals": 4},
     {"name": "tolerance_ppm", "label": "探す幅 (±ppm)", "type": "float", "default": 50.0,
      "min": 1.0, "max": 5000.0, "decimals": 1},
     {"name": "detect_percent", "label": "検出の下限(最大ピークに対する %)", "type": "float", "default": 0.5,
@@ -60,7 +60,7 @@ def analyze(dataset, params):
     order = np.argsort(x[ok], kind="stable")
     x, y = x[ok][order], y[ok][order]
 
-    results = match_all(counts, adducts, x, y, resolution=float(params.get("resolution", 0.0) or 0.0),
+    results = match_all(counts, adducts, x, y, fwhm=float(params.get("fwhm", 0.1) or 0.1),
                         tolerance_ppm=float(params.get("tolerance_ppm", 50.0)),
                         min_detect_percent=float(params.get("detect_percent", 0.5)))
     fmt = LabelFormat(mz_decimals=int(params.get("mz_decimals", 4)), ppm_decimals=int(params.get("ppm_decimals", 1)))
@@ -82,7 +82,7 @@ def analyze(dataset, params):
         if params.get("overlay", True):
             new_datasets.extend(pattern_datasets(result, format_formula(counts), color, fmt,
                                                  provenance=dict(provenance, adduct=result.pattern.adduct.notation,
-                                                                 resolution=result.resolution)))
+                                                                 fwhm=result.fwhm)))
         anchor = result.monoisotopic if result.monoisotopic and np.isfinite(result.monoisotopic.measured_mz) \
             else result.base
         text = f"{result.pattern.adduct.notation} {fmt.mz(anchor.measured_mz)} ({fmt.ppm(anchor.error_ppm)})"

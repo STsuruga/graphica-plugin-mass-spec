@@ -87,7 +87,7 @@ def pattern_datasets(match, formula_text, color, fmt=None, label_min_relative=5.
     notation = match.pattern.adduct.notation
     base_name = f"{formula_text} {notation} 計算"
     px, py = match.profile()
-    profile = spectrum_dataset(f"{base_name}(R {match.resolution:.0f})", px, py, color,
+    profile = spectrum_dataset(f"{base_name}(FWHM {match.fwhm:g})", px, py, color,
                                provenance=provenance, compact=False)
     profile.linestyle = "--"
     sx, sy = match.sticks()

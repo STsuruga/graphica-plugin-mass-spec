@@ -22,7 +22,7 @@ def _spectrum(shift_ppm=3.0, resolution=12000, noise=0.0, formula="C6H12O6", add
     return grid, y, pattern
 
 
-def test_found_adduct_reports_ppm_relative_intensity_and_resolution():
+def test_found_adduct_reports_ppm_and_relative_intensity():
     mz, y, pattern = _spectrum(shift_ppm=3.0, noise=1.0)
     result = match_adduct(GLUCOSE, parse_adduct("[M+Na]+"), mz, y)
     assert result.found and result.status == "検出"
@@ -30,15 +30,19 @@ def test_found_adduct_reports_ppm_relative_intensity_and_resolution():
     assert mono.error_ppm == pytest.approx(3.0, abs=1.0)
     m1 = next(p for p in result.peaks if p.label == "M+1")
     assert m1.measured_relative == pytest.approx(m1.calc_relative, abs=1.0)
-    assert result.resolution_source == "実測"
-    assert result.resolution == pytest.approx(12000, rel=0.15)
+    assert result.fwhm == pytest.approx(0.1)
     assert result.scale == pytest.approx(1000.0, rel=0.03)
 
 
-def test_fixed_resolution_is_used_as_given():
+def test_fwhm_sets_the_width_of_the_calculated_profile():
     mz, y, _ = _spectrum()
-    result = match_adduct(GLUCOSE, parse_adduct("[M+Na]+"), mz, y, resolution=8000)
-    assert (result.resolution, result.resolution_source) == (8000, "指定")
+    result = match_adduct(GLUCOSE, parse_adduct("[M+Na]+"), mz, y, fwhm=0.02)
+    px, py = result.profile()
+    top = py.max()
+    near_mono = (px > result.pattern.mz[0] - 0.1) & (px < result.pattern.mz[0] + 0.1)
+    above = px[near_mono][py[near_mono] >= py[near_mono].max() / 2]
+    assert above[-1] - above[0] == pytest.approx(0.02, rel=0.1)
+    assert top > 0
 
 
 def test_absent_and_out_of_range_adducts():

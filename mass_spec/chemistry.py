@@ -262,11 +262,11 @@ def ion_pattern(counts, adduct, min_relative=1e-3):
                       monoisotopic_mass(ion) / abs(z) + correction)
 
 
-def gaussian_profile(mz, relative, resolution, points_per_fwhm=20, span_fwhm=4.0):
-    """各ピークに FWHM = m/z ÷ 分解能 のガウスを置いたプロファイル。"""
+def gaussian_profile(mz, relative, fwhm, points_per_fwhm=20, span_fwhm=4.0):
+    """各ピークに、指定した半値全幅(m/z の単位、どのピークも同じ)のガウスを置いたプロファイル。"""
     mz = np.asarray(mz, dtype=float)
     relative = np.asarray(relative, dtype=float)
-    fwhm = mz / resolution
+    fwhm = np.full_like(mz, float(fwhm))
     step = fwhm.min() / points_per_fwhm
     lo = (mz - span_fwhm * fwhm).min()
     hi = (mz + span_fwhm * fwhm).max()

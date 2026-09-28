@@ -27,7 +27,7 @@ from .chemistry import (
 from .datasets import (
     centroid_dataset, pattern_datasets, range_text, spectrum_dataset, stick_dataset, tic_dataset,
 )
-from .matching import DEFAULT_RESOLUTION, match_all
+from .matching import match_all
 from .mzml import MzmlError, read_mzml
 from .plots import PanePlot, SpectrumPlot, TicPlot
 from .settings import load_settings, save_settings
@@ -834,7 +834,7 @@ class MassSpecPanel(QWidget):
     def run_calculation(self, quiet=False):
         w = self.calc_window
         self.settings.update(formula=w.formula_edit.text().strip(), preset=w.preset_combo.currentIndex(),
-                             extra_adducts=w.extra_edit.text().strip(), resolution=w.resolution_spin.value(),
+                             extra_adducts=w.extra_edit.text().strip(), fwhm=w.fwhm_spin.value(),
                              tolerance_ppm=w.tolerance_spin.value())
         self._save()
         try:
@@ -850,7 +850,7 @@ class MassSpecPanel(QWidget):
             return
         if self.spectrum is not None:
             results = match_all(counts, adducts, self.spectrum["mz"], self.spectrum["y"],
-                                resolution=self.settings["resolution"], tolerance_ppm=self.settings["tolerance_ppm"],
+                                fwhm=self.settings["fwhm"], tolerance_ppm=self.settings["tolerance_ppm"],
                                 min_detect_percent=self.settings["detect_percent"])
         else:
             results = []
@@ -885,19 +885,17 @@ class MassSpecPanel(QWidget):
             if notation != adduct or isinstance(r, Exception):
                 continue
             color = colors[i % len(colors)]
-            if hasattr(r, "found"):
-                pattern, resolution = r.pattern, r.resolution
-            else:
-                pattern, resolution = r, self.settings["resolution"] or DEFAULT_RESOLUTION
+            pattern = r.pattern if hasattr(r, "found") else r
+            fwhm = self.settings["fwhm"]
             if getattr(r, "found", False):
                 px, py = r.profile()
                 sticks = r.sticks()
             else:
-                px, py = gaussian_profile(pattern.mz, pattern.relative, resolution)
+                px, py = gaussian_profile(pattern.mz, pattern.relative, fwhm)
                 sticks = (pattern.mz, pattern.relative)
-            return {"kind": "calc", "name": f"{self.calc['formula']} {notation} 計算(R {resolution:.0f})",
+            return {"kind": "calc", "name": f"{self.calc['formula']} {notation} 計算(FWHM {fwhm:g})",
                     "mz": px, "y": py, "sticks": sticks, "peaks": [], "color": color, "result": r,
-                    "pattern": pattern, "resolution": resolution}
+                    "pattern": pattern, "fwhm": fwhm}
         return None
 
     def pattern_to_pane(self, adduct, index):
@@ -911,7 +909,7 @@ class MassSpecPanel(QWidget):
     def calc_rows(self):
         """表の行(表示用の文字列)。"""
         fmt = self.label_format()
-        header = ["付加イオン", "ピーク", "計算 m/z", "実測 m/z", "誤差 (ppm)", "計算 %", "実測 %", "R", "状態"]
+        header = ["付加イオン", "ピーク", "計算 m/z", "実測 m/z", "誤差 (ppm)", "計算 %", "実測 %", "半値全幅", "状態"]
         rows = []
         if self.calc is None:
             return header, rows
@@ -933,7 +931,7 @@ class MassSpecPanel(QWidget):
                 rows.append([
                     adduct, p.label, fmt.mz(p.calc_mz), fmt.mz(p.measured_mz) if measured else "",
                     f"{p.error_ppm:+.{fmt.ppm_decimals}f}" if measured else "", f"{p.calc_relative:.1f}",
-                    f"{p.measured_relative:.1f}" if measured else "", f"{r.resolution:.0f}({r.resolution_source})",
+                    f"{p.measured_relative:.1f}" if measured else "", f"{r.fwhm:g}",
                     r.status])
         return header, rows
 
@@ -996,7 +994,7 @@ class MassSpecPanel(QWidget):
         fmt = self.label_format()
         r = item["result"]
         provenance = {"plugin": "mass_spec", "formula": self.calc["formula"] if self.calc else "",
-                      "adduct": item["pattern"].adduct.notation, "resolution": item["resolution"]}
+                      "adduct": item["pattern"].adduct.notation, "fwhm": item["fwhm"]}
         if hasattr(r, "found") and r.found:
             return pattern_datasets(r, self.calc["formula"], item["color"], fmt, provenance=provenance)
         sx, sy = item["sticks"]

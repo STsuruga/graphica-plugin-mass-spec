@@ -22,7 +22,7 @@ DEFAULTS = {
     "formula": "",
     "preset": 0,                    # 付加イオンの標準セットの番号
     "extra_adducts": "",
-    "resolution": 0.0,
+    "fwhm": 0.1,                    # 計算パターンの半値全幅(m/z)
     "tolerance_ppm": 50.0,
     "detect_percent": 0.5,
     "pane_count": 3,

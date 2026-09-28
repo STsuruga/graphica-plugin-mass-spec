@@ -28,7 +28,7 @@ def spin(minimum, maximum, value, decimals=3, step=0.1, width=90):
 
 
 class CalcWindow(QWidget):
-    """組成式・付加イオン・分解能を入れて計算し、照合表を出す。結果は3段目の枠と本体のプロットへ出せる。"""
+    """組成式・付加イオン・計算パターンの半値全幅を入れて計算し、照合表を出す。結果は3段目の枠と本体のプロットへ出せる。"""
 
     def __init__(self, viewer):
         super().__init__(viewer, Qt.WindowType.Window)
@@ -52,15 +52,14 @@ class CalcWindow(QWidget):
         self.extra_edit.returnPressed.connect(viewer.run_calculation)
         form.addRow("", self.extra_edit)
         row = QHBoxLayout()
-        self.resolution_spin = spin(0, 1e7, s["resolution"], decimals=0, step=1000)
-        self.resolution_spin.setSpecialValueText("実測から")
+        self.fwhm_spin = spin(0.0001, 100.0, s["fwhm"], decimals=4, step=0.01, width=110)
         self.tolerance_spin = spin(1, 5000, s["tolerance_ppm"], decimals=1, step=5, width=90)
-        row.addWidget(self.resolution_spin)
+        row.addWidget(self.fwhm_spin)
         row.addSpacing(20)
         row.addWidget(QLabel("探す幅 ±ppm"))
         row.addWidget(self.tolerance_spin)
         row.addStretch(1)
-        form.addRow("分解能 R", row)
+        form.addRow("半値全幅 (m/z)", row)
         layout.addLayout(form)
 
         row = QHBoxLayout()

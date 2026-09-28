@@ -7,7 +7,7 @@ import pandas as pd
 from .chemistry import FormulaError, gaussian_profile, ion_pattern, parse_adduct
 from .spectra import find_peaks
 
-DEFAULT_RESOLUTION = 10000.0
+DEFAULT_FWHM = 0.1   # 計算パターンの半値全幅(m/z)
 TABLE_MIN_RELATIVE = 1.0  # 表に出す計算ピークの相対強度の下限(%)
 
 
@@ -30,8 +30,7 @@ class AdductMatch:
     pattern: object             # chemistry.IonPattern
     found: bool
     status: str                 # 検出 / 未検出 / 測定範囲外
-    resolution: float
-    resolution_source: str      # 実測 / 指定 / 既定
+    fwhm: float                 # 計算パターンの半値全幅(m/z)
     scale: float                # 計算の相対強度 100 に対応する実測の強度
     peaks: list = field(default_factory=list)
 
@@ -46,7 +45,7 @@ class AdductMatch:
 
     def profile(self, points_per_fwhm=20):
         """実測の強度に合わせたガウスのプロファイル (m/z, 強度)。"""
-        x, y = gaussian_profile(self.pattern.mz, self.pattern.relative, self.resolution, points_per_fwhm)
+        x, y = gaussian_profile(self.pattern.mz, self.pattern.relative, self.fwhm, points_per_fwhm)
         return x, y * self.scale / 100.0
 
     def sticks(self):
@@ -73,12 +72,13 @@ def _tallest_near(peaks_mz, peaks_h, target, tol_ppm):
     return lo + int(np.argmax(peaks_h[lo:hi]))
 
 
-def match_adduct(counts, adduct, mz, y, resolution=0.0, tolerance_ppm=50.0, min_detect_percent=0.5):
+def match_adduct(counts, adduct, mz, y, fwhm=DEFAULT_FWHM, tolerance_ppm=50.0, min_detect_percent=0.5):
     """1つの付加イオンについて、計算パターンと実測を照合する。
 
-    resolution が 0 なら、実測で対応したピークの半値全幅から求める。min_detect_percent は、計算で最も強いピークに
-    対応する実測ピークが、スペクトル全体の最大に対して何 % 以上あれば「検出」とするか。
+    fwhm は計算パターンの半値全幅(m/z)。min_detect_percent は、計算で最も強いピークに対応する実測ピークが、
+    スペクトル全体の最大に対して何 % 以上あれば「検出」とするか。
     """
+    fwhm = float(fwhm)
     pattern = ion_pattern(counts, adduct)
     mz = np.asarray(mz, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -93,19 +93,12 @@ def match_adduct(counts, adduct, mz, y, resolution=0.0, tolerance_ppm=50.0, min_
     base = max(matches, key=lambda p: p.calc_relative)
 
     if len(mz) == 0 or not (mz.min() <= base.calc_mz <= mz.max()):
-        return AdductMatch(pattern, False, "測定範囲外", resolution or DEFAULT_RESOLUTION,
-                           "指定" if resolution else "既定", 0.0, matches)
+        return AdductMatch(pattern, False, "測定範囲外", fwhm, 0.0, matches)
 
     j = _tallest_near(peaks_mz, peaks_h, base.calc_mz, tolerance_ppm)
     found = j is not None and spectrum_max > 0 and peaks_h[j] >= spectrum_max * min_detect_percent / 100.0
-    if resolution and resolution > 0:
-        r, source = float(resolution), "指定"
-    elif found and np.isfinite(peaks[j].resolution):
-        r, source = float(peaks[j].resolution), "実測"
-    else:
-        r, source = DEFAULT_RESOLUTION, "既定"
     if not found:
-        return AdductMatch(pattern, False, "未検出", r, source, 0.0, matches)
+        return AdductMatch(pattern, False, "未検出", fwhm, 0.0, matches)
 
     base_height = peaks_h[j]
     for match in matches:
@@ -115,7 +108,7 @@ def match_adduct(counts, adduct, mz, y, resolution=0.0, tolerance_ppm=50.0, min_
         match.measured_mz = float(peaks_mz[k])
         match.measured_height = float(peaks_h[k])
         match.measured_relative = float(peaks_h[k] / base_height * base.calc_relative)
-    return AdductMatch(pattern, True, "検出", r, source, float(base_height / base.calc_relative * 100.0), matches)
+    return AdductMatch(pattern, True, "検出", fwhm, float(base_height / base.calc_relative * 100.0), matches)
 
 
 def match_all(counts, adducts, mz, y, **kwargs):
@@ -131,7 +124,7 @@ def match_all(counts, adducts, mz, y, **kwargs):
 
 
 TABLE_COLUMNS = ["付加イオン", "イオンの組成", "ピーク", "計算 m/z", "実測 m/z", "誤差 (ppm)",
-                 "計算 相対強度 (%)", "実測 相対強度 (%)", "実測 強度", "分解能 R", "R の求め方", "状態"]
+                 "計算 相対強度 (%)", "実測 相対強度 (%)", "実測 強度", "半値全幅", "状態"]
 
 
 def results_table(results, adducts_text=None):
@@ -154,8 +147,7 @@ def results_table(results, adducts_text=None):
                 "計算 相対強度 (%)": match.calc_relative,
                 "実測 相対強度 (%)": match.measured_relative,
                 "実測 強度": match.measured_height,
-                "分解能 R": result.resolution,
-                "R の求め方": result.resolution_source,
+                "半値全幅": result.fwhm,
                 "状態": result.status,
             })
     return pd.DataFrame(rows, columns=TABLE_COLUMNS)

@@ -72,7 +72,7 @@ def test_analyzer_matches_and_overlays():
     ds = _spectrum_dataset()
     before = ds.df.copy()
     result = analyze(ds, {"formula": "C6H12O6", "preset": PRESET_POSITIVE, "extra_adducts": "[2M+Na]+",
-                          "resolution": 0.0, "tolerance_ppm": 50.0, "detect_percent": 0.5,
+                          "fwhm": 0.1, "tolerance_ppm": 50.0, "detect_percent": 0.5,
                           "mz_decimals": 3, "ppm_decimals": 1, "overlay": True})
     assert isinstance(result, AnalysisResult)
     pd.testing.assert_frame_equal(ds.df, before)

@@ -135,8 +135,8 @@ def test_pattern_for_a_large_molecule_is_fast_and_normalized():
     assert len(mz) < 40
 
 
-def test_gaussian_profile_width_matches_resolution():
-    x, y = gaussian_profile([500.0], [100.0], resolution=10000)
+def test_gaussian_profile_width_matches_the_given_fwhm():
+    x, y = gaussian_profile([500.0], [100.0], fwhm=0.05)
     assert x[np.argmax(y)] == pytest.approx(500.0, abs=0.05 / 20)
     above = x[y >= 50.0]
     assert above[-1] - above[0] == pytest.approx(0.05, rel=0.1)
