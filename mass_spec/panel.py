@@ -426,8 +426,6 @@ class MassSpecPanel(QWidget):
             self.pane_spin.setValue(count)
         self.settings["pane_count"] = count
         self._save()
-        if hasattr(self, "calc_window"):
-            self.calc_window.update_pane_choices(count)
 
     def _on_sync_toggled(self, on):
         self.settings["sync_panes"] = on
@@ -467,13 +465,22 @@ class MassSpecPanel(QWidget):
                 return i
         return None
 
+    def _free_pane(self):
+        """いちばん上の空いている枠。空きがなければ枠を1つ増やす(上限なら None)。"""
+        index = self.first_empty_pane()
+        if index is None and len(self.panes) < MAX_PANES:
+            self.set_pane_count(len(self.panes) + 1)
+            index = len(self.panes) - 1
+        if index is None:
+            self.ctx.show_message(f"3段目の枠が {MAX_PANES} 個すべて使われています。どれかを空にしてください。", "MS パック")
+        return index
+
     def copy_spectrum_to_pane(self, index=None):
         if self.spectrum is None:
             return
         if index is None:
-            index = self.first_empty_pane()
+            index = self._free_pane()
             if index is None:
-                self.ctx.show_message("空いている枠がありません。枠の数を増やすか、枠を空にしてください。", "MS パック")
                 return
         s = self.spectrum
         mz, y = compact_zeros(s["mz"], s["y"])
@@ -898,11 +905,15 @@ class MassSpecPanel(QWidget):
                     "pattern": pattern, "fwhm": fwhm}
         return None
 
-    def pattern_to_pane(self, adduct, index):
+    def pattern_to_pane(self, adduct, index=None):
         item = self._pattern_item(adduct)
         if item is None:
             self.ctx.show_message(f"{adduct} の計算結果がありません。", "MS パック")
             return
+        if index is None:
+            index = self._free_pane()
+            if index is None:
+                return
         self.show_in_pane(index, item)
 
 

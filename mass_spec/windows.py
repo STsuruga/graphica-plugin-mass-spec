@@ -80,24 +80,16 @@ class CalcWindow(QWidget):
         layout.addWidget(self.table, 1)
 
         row = QHBoxLayout()
-        self.pane_combo = QComboBox()
-        self.to_pane_button = QPushButton("選んだ付加イオンを枠に表示")
+        self.to_pane_button = QPushButton("選んだ付加イオンを3段目に表示")
+        self.to_pane_button.setToolTip("3段目の空いている枠に出す(空きがなければ枠を1つ増やす)")
         self.to_pane_button.clicked.connect(self._send_selected_to_pane)
         self.transfer_button = QPushButton("計算パターンをプロットに転送")
         self.transfer_button.clicked.connect(viewer.transfer_calculation)
-        row.addWidget(QLabel("3段目の枠"))
-        row.addWidget(self.pane_combo)
         row.addWidget(self.to_pane_button)
         row.addWidget(self.transfer_button)
         row.addStretch(1)
         layout.addLayout(row)
-        self.update_pane_choices(viewer.pane_count())
 
-    def update_pane_choices(self, count):
-        current = self.pane_combo.currentIndex()
-        self.pane_combo.clear()
-        self.pane_combo.addItems([f"枠 {i + 1}" for i in range(count)])
-        self.pane_combo.setCurrentIndex(min(max(current, 0), count - 1))
 
     def selected_adduct(self):
         rows = sorted({i.row() for i in self.table.selectedIndexes()})
@@ -111,7 +103,7 @@ class CalcWindow(QWidget):
         if adduct is None:
             self.viewer.ctx.show_message("表で付加イオンの行を選んでください。", "MS パック")
             return
-        self.viewer.pattern_to_pane(adduct, self.pane_combo.currentIndex())
+        self.viewer.pattern_to_pane(adduct)
 
     def show_table(self, header, rows):
         self.table.clear()

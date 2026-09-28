@@ -156,8 +156,14 @@ def test_spectrum_copies_into_panes(panel, mzml):
     assert panel.panes[2].item is None
     assert "10" not in panel.panes[1].item["name"] or panel.panes[1].item["provenance"]["scans"] == 1
     panel.copy_spectrum_to_pane(2)
-    panel.copy_spectrum_to_pane()
     assert panel.first_empty_pane() is None
+    panel.copy_spectrum_to_pane()                 # 空きがなければ枠を1つ増やす
+    assert panel.pane_count() == 4 and panel.panes[3].item is not None
+    panel.set_pane_count(8)
+    for i in range(4, 8):
+        panel.copy_spectrum_to_pane(i)
+    panel.copy_spectrum_to_pane()                 # 上限まで埋まっていればお知らせ
+    assert panel.pane_count() == 8 and "すべて使われています" in panel.ctx.messages[-1][2]
 
 
 def test_found_patterns_fill_panes_and_one_item_per_pane(panel, mzml):
@@ -170,8 +176,7 @@ def test_found_patterns_fill_panes_and_one_item_per_pane(panel, mzml):
     assert item["kind"] == "calc" and "[M+Na]+" in item["name"]
     assert panel.panes[1].item is None
     panel.calc_window.table.selectRow(0)  # [M+H]+ の行(未検出でも計算パターンは出せる)
-    panel.calc_window.pane_combo.setCurrentIndex(1)
-    panel.calc_window._send_selected_to_pane()
+    panel.calc_window._send_selected_to_pane()   # 枠を選ばず、空いている枠(2番目)に入る
     assert "[M+H]+" in panel.panes[1].item["name"]
 
 
@@ -179,7 +184,7 @@ def test_pane_count_spin(panel, mzml):
     _open_all(panel, mzml)
     panel.copy_spectrum_to_pane(0)
     panel.pane_spin.setValue(5)
-    assert panel.pane_count() == 5 and panel.calc_window.pane_combo.count() == 5
+    assert panel.pane_count() == 5
     panel.pane_spin.setValue(1)
     assert panel.pane_count() == 1 and panel.panes[0].item is not None
     assert panel.settings["pane_count"] == 1
