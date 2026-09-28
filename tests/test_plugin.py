@@ -54,6 +54,18 @@ def test_loads_like_graphica(tmp_path):
 
 
 @requires_graphica
+def test_built_zip_installs_and_loads_like_graphica(tmp_path):
+    from graphica.plugin.testing import install_zip_like_graphica
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    from build_zip import build_plugin_zip
+    zip_path = build_plugin_zip("mass_spec", out_dir=str(tmp_path / "dist"))
+    folder = install_zip_like_graphica(zip_path, str(tmp_path / "plugins"))
+    assert folder == "mass_spec"
+    _api, record = load_plugin_like_graphica(str(tmp_path / "plugins" / folder), work_dir=str(tmp_path / "work"))
+    assert record["error"] is None
+
+
+@requires_graphica
 def test_analyzer_matches_and_overlays():
     from mass_spec.analyzer import PRESET_POSITIVE, analyze
     ds = _spectrum_dataset()

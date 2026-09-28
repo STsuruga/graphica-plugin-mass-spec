@@ -53,6 +53,17 @@ python scripts/build_zip.py --all      # dist/mass_spec-<version>.zip
 - ctx の呼び出しは GUI スレッドだけ(msconvert の完了通知は QProcess のシグナルで GUI スレッドに戻る)。
 - リリースしたら plugin.json の version とタグを揃え、ハブの db(collection "plugins", doc_id "P-316")を更新する。
 
+## 実データで分かったこと(ユーザーの micrOTOF の測定3件、2026-09-28)
+- msconvert(ProteoWizard 3.0.26267、`%LOCALAPPDATA%\Apps\ProteoWizard … 64-bit\`)の変換は1件 5〜6 秒、mzML は 26〜94 MB。
+- profile だけ。20〜77 スキャン(約 1 秒ごと)、1スキャン常に 150,912 点(0 も省略されない。0 が 47〜99.7%)。
+  m/z は 64 bit・強度は 32 bit・zlib。点の間隔は約 20 ppm。
+- スキャン間の m/z の格子のずれは最大 0.36 ppm → 点の番号ごとに平均してよい(spectra.GRID_TOLERANCE_PPM)。
+- 分解能は負イオンで 1.1〜1.7 万、正イオンの弱いピークで約 6 千。半値全幅に 2〜6 点しか乗らないので頂点はガウスの3点補間。
+- 装置の TIC(mzML の total ion current)は profile の総和と値が違う。表示は装置の値。
+- パネルで開いて全スキャンを平均し、ピークを拾うまで 0.3〜1.1 秒(GUI スレッド)。配列はそのつど復号(全部持つと 186 MB)。
+- テストの合成データ(tests/synthetic.py)はこの形に合わせてある。
+
 ## 現状
-- 2026-09-28: 仕様確定。リポジトリと仮想環境を作成。chemistry.py(組成式・付加イオン・同位体パターン・ガウス)と
-  テストまで完了。次は ProteoWizard の導入を待って実データ(mzML の中身・点数・時間)を確認し、mzml.py / convert.py。
+- 2026-09-28: 計算・mzML の読み込み・照合・analyzer・importer・Stick・convert(msconvert の自動実行とキャッシュ)・
+  パネル(マウス操作・ラベル・桁数・転送)まで実装し、テスト 108 件。次は zip をユーザーの Graphica に入れて実機で確認
+  (画面はユーザーにも確認してもらう)、指摘を直してから v1.0.0 をリリース。
