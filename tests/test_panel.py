@@ -75,7 +75,7 @@ def _calculate(panel, formula="C6H12O6", preset=0, extra=""):
 
 def test_menu_bar_and_toolbar(panel):
     titles = [a.text() for a in panel.menu_bar.actions()]
-    assert titles == ["ファイル", "表示", "計算", "転送", "ヘルプ"]
+    assert titles == ["ファイル", "表示", "解析", "転送", "ヘルプ"]
     assert panel.pane_count() == 3 and panel.pane_spin.value() == 3
     assert panel.splitter.count() == 3
 

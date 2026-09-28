@@ -55,7 +55,7 @@ Ctrl+左ドラッグで矩形の拡大、Shift+左ドラッグで Δm/z を測�
 軸の上: ホイールで拡大縮小、左ドラッグで表示範囲をずらす。
 グラフの中: ホイールで拡大縮小(Shift で縦)、中ボタンドラッグでパン、ダブルクリックで全体、Backspace で1つ前。
 
-計算 ▸ 組成式から計算・照合 で同位体パターンと付加イオンを計算し、実測と照合する(結果は枠や本体のプロットへ)。
+解析 ▸ 同位体パターンの照合 で組成式から同位体パターンと付加イオンを計算し、実測と照合する(結果は枠や本体のプロットへ)。
 表示 ▸ 表示設定 でラベルの本数・桁数、背景、転送の設定。
 """
 
@@ -180,8 +180,8 @@ class MassSpecPanel(QWidget):
         m.addSeparator()
         m.addAction("時間範囲の詳細設定…", lambda: self._open_window(self.range_window))
         m.addAction("表示設定…", self.open_settings_window)
-        m = self.menu_bar.addMenu("計算")
-        m.addAction("組成式から計算・照合…", self.open_calc_window)
+        m = self.menu_bar.addMenu("解析")
+        m.addAction("同位体パターンの照合…", self.open_calc_window)
         m = self.menu_bar.addMenu("転送")
         m.addAction("TIC", self.transfer_tic)
         m.addAction("スペクトル(2段目)", self.transfer_spectrum)

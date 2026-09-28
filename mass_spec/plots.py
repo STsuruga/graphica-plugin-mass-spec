@@ -614,8 +614,6 @@ class SpectrumPlot(InteractivePlot):
 class PanePlot(SpectrumPlot):
     """3段目の枠。実測のコピーか計算パターンを1つだけ持つ。"""
 
-    EMPTY_TEXT = "空の枠(2段目や計算ウィンドウから表示できます)"
-
     def __init__(self, number, parent=None):
         super().__init__(parent, height_inches=1.5)
         self.number = number
@@ -631,7 +629,6 @@ class PanePlot(SpectrumPlot):
             self.set_spectrum([], [], [])
             self.ax.set_xticks([])
             self.ax.set_yticks([])
-            self._set_title(f"{self.number}: {self.EMPTY_TEXT}")
             self.draw_idle()
             return
         if item["kind"] == "calc":

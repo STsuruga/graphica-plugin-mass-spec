@@ -1,4 +1,4 @@
-"""MS ビューアのメニューから開く別ウィンドウ: 「組成式から計算・照合」と「表示設定」。
+"""MS ビューアのメニューから開く別ウィンドウ: 「同位体パターンの照合」「時間範囲の詳細設定」「表示設定」。
 
 どちらもビューアの子ウィンドウで、ビューアが持つ窓口 ctx を通して本体とやりとりする(ビューアと一緒に閉じる)。
 """
@@ -33,7 +33,7 @@ class CalcWindow(QWidget):
         super().__init__(viewer, Qt.WindowType.Window)
         self.viewer = viewer
         s = viewer.settings
-        self.setWindowTitle("組成式から計算・照合 - MS パック")
+        self.setWindowTitle("同位体パターンの照合 - MS パック")
         self.resize(720, 520)
         layout = QVBoxLayout(self)
         form = QFormLayout()
