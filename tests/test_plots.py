@@ -194,3 +194,16 @@ def test_overlays_are_drawn_and_included_in_the_height(spectrum):
     spectrum.set_overlays([(np.array([575.0]), np.array([500.0]), "#ff0000", "calc", "stick")])
     spectrum.set_view((570.0, 580.0), (0, spectrum._top(570.0, 580.0)))
     assert spectrum.ax.get_ylim()[1] == pytest.approx(575.0, rel=0.01)
+
+
+def test_y_axis_uses_superscript_powers_from_1e4():
+    plot = SpectrumPlot()
+    plot.resize(600, 250)
+    grid = tof_grid(400.0, 600.0)
+    plot.set_spectrum(grid, gaussian_peaks(grid, [500.0], [2.0e5], 12000), [])
+    plot.draw()
+    text = plot.ax.yaxis.get_offset_text().get_text()
+    assert "times" in text and "10^{5}" in text
+    plot.set_spectrum(grid, gaussian_peaks(grid, [500.0], [5000.0], 12000), [])
+    plot.draw()
+    assert plot.ax.yaxis.get_offset_text().get_text() == ""

@@ -73,6 +73,13 @@ class InteractivePlot(FigureCanvasQTAgg):
         self.ax.yaxis.label.set_color(fg)
         self.foreground = fg
 
+    def format_y_axis(self):
+        """縦軸は 10^4 以上(と 10^-3 未満)を指数にし、×10⁴ のように上付きで出す。"""
+        self.ax.ticklabel_format(axis="y", style="sci", scilimits=(-3, 4), useMathText=True)
+        offset = self.ax.yaxis.get_offset_text()
+        offset.set_fontsize(8)
+        offset.set_color(self.foreground)
+
     # ---- 表示範囲
     def set_home(self, xlim, ylim):
         self._home = (tuple(xlim), tuple(ylim))
@@ -275,7 +282,7 @@ class TicPlot(InteractivePlot):
         times = np.asarray(times, dtype=float)
         tics = np.asarray(tics, dtype=float)
         (self._line,) = self.ax.plot(times, tics, color=self.foreground, linewidth=1.0)
-        self.ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 3))
+        self.format_y_axis()
         if len(times):
             span = max(times[-1] - times[0], 1e-6)
             top = float(np.nanmax(tics)) if np.any(np.isfinite(tics)) else 1.0
@@ -420,7 +427,7 @@ class SpectrumPlot(InteractivePlot):
         self._measure_artists = []
         (self._line,) = self.ax.plot(self.mz, self.y, color=color or self.foreground, linewidth=0.8,
                                      linestyle=linestyle)
-        self.ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 3))
+        self.format_y_axis()
         if len(self.mz):
             self.set_home((self.mz[0], self.mz[-1]), (0, self._top(self.mz[0], self.mz[-1])))
             if xlim is not None:
