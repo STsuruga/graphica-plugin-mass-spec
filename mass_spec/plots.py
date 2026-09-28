@@ -274,19 +274,39 @@ class TicPlot(InteractivePlot):
         self.ax.set_xlabel("Time (min)", fontsize=8)
 
     def set_data(self, times, tics):
+        self.set_traces([{"times": times, "tics": tics, "color": None, "focused": True}])
+
+    def set_traces(self, traces, keep_view=False):
+        """TIC を重ねて描く。traces: [{"times", "tics", "color", "focused"}, ...]。範囲の帯は消えるので描き直すこと。"""
+        view = (self.ax.get_xlim(), self.ax.get_ylim()) if keep_view and self._home else None
         self.ax.cla()
         self.apply_palette()
         self._patches = {}
         self._scan_marker = None
         self.ax.set_xlabel("Time (min)", fontsize=8)
-        times = np.asarray(times, dtype=float)
-        tics = np.asarray(tics, dtype=float)
-        (self._line,) = self.ax.plot(times, tics, color=self.foreground, linewidth=1.0)
+        self.lines = []
+        lo, hi, top = np.inf, -np.inf, 0.0
+        for trace in traces:
+            times = np.asarray(trace["times"], dtype=float)
+            tics = np.asarray(trace["tics"], dtype=float)
+            if not len(times):
+                continue
+            focused = trace.get("focused", False)
+            (line,) = self.ax.plot(times, tics, color=trace.get("color") or self.foreground,
+                                   linewidth=1.4 if focused else 0.9, alpha=1.0 if focused else 0.75,
+                                   zorder=3 if focused else 2)
+            self.lines.append(line)
+            lo, hi = min(lo, times[0]), max(hi, times[-1])
+            if np.any(np.isfinite(tics)):
+                top = max(top, float(np.nanmax(tics)))
+        self._line = self.lines[0] if self.lines else None
         self.format_y_axis()
-        if len(times):
-            span = max(times[-1] - times[0], 1e-6)
-            top = float(np.nanmax(tics)) if np.any(np.isfinite(tics)) else 1.0
-            self.set_home((times[0] - span * 0.02, times[-1] + span * 0.02), (0, top * 1.08 or 1.0))
+        if np.isfinite(lo):
+            span = max(hi - lo, 1e-6)
+            self.set_home((lo - span * 0.02, hi + span * 0.02), (0, top * 1.08 or 1.0))
+            if view is not None:
+                self.ax.set_xlim(*view[0])
+                self.ax.set_ylim(*view[1])
         self.ranges = {"sample": None, "background": None}
         self.draw_idle()
 

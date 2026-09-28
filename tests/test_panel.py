@@ -82,8 +82,8 @@ def test_menu_bar_and_toolbar(panel):
 
 def test_open_shows_tic_and_the_average_of_all_scans(panel, mzml):
     run = panel.open_mzml(mzml)
-    assert run is not None and panel.run_combo.count() == 1
-    assert "10 スキャン" in panel.run_combo.currentText()
+    assert run is not None and panel.run_list.count() == 1
+    assert panel.run_list.currentItem().text() == "sample" and "10 スキャン" in panel.run_list.currentItem().toolTip()
     assert panel.range_window.sample_from.value() == pytest.approx(0.0)
     assert panel.range_window.sample_to.value() == pytest.approx(9 / 60, abs=1e-3)
     assert panel.spectrum is not None and panel.spectrum["provenance"]["scans"] == 10
@@ -287,15 +287,15 @@ def test_open_d_converts_once_then_uses_the_cache(panel, ctx, tmp_path):
     assert "変換中" in panel.progress_label.text()
     _wait(lambda: panel._process is None)
     assert not panel.progress_row.isVisibleTo(panel)
-    assert panel.run_combo.count() == 1
-    assert panel.run_combo.currentText().startswith("measure")
+    assert panel.run_list.count() == 1
+    assert panel.run_list.currentItem().text() == "measure"
     calls = (d / "calls.txt").read_text().splitlines()
     assert len(calls) == 1 and "--zlib" in calls[0]
     cache = os.path.join(ctx.data_dir, "mzml_cache")
     assert [f for f in os.listdir(cache) if f.endswith(".mzML")]
     assert not [f for f in os.listdir(cache) if f.endswith(".part")]
     panel.open_d(str(d))
-    assert panel._process is None and panel.run_combo.count() == 2
+    assert panel._process is None and panel.run_list.count() == 2
     assert len((d / "calls.txt").read_text().splitlines()) == 1
 
 
@@ -339,7 +339,7 @@ def test_register_adds_panel_and_help(tmp_path):
     action.callback(ctx)
     assert "MS スペクトル" in ctx.messages[-1][2]
     widget = api.panels[PANEL_NAME]["widget_factory"](ctx)
-    assert widget.run_combo.count() == 0
+    assert widget.run_list.count() == 0
     widget.close()
 
 
@@ -355,3 +355,25 @@ def test_range_fields_live_in_the_detail_window(panel, mzml):
     panel.reset_sample_range()
     assert panel.spectrum["provenance"]["scans"] == 10
     assert w.sample_to.value() == pytest.approx(9 / 60, abs=1e-3)
+
+
+def test_run_list_checks_toggle_tics_and_click_focuses(panel, tmp_path):
+    from PySide6.QtCore import Qt
+    first = panel.open_mzml(write_mzml(tmp_path / "pos.mzML", run_scans(n=10)))
+    second = panel.open_mzml(write_mzml(tmp_path / "neg.mzML", run_scans(n=6), polarity="negative"))
+    assert panel.run_list.count() == 2 and panel.current_run() is second
+    assert first.color != second.color and first.color.startswith("#")
+    assert len(panel.tic_plot.lines) == 2
+    assert panel.tic_header.text() == "クロマトグラム - neg: TIC −"
+    assert panel.spectrum_header.text().startswith("スペクトル - neg ")
+    panel.run_list.item(0).setCheckState(Qt.CheckState.Unchecked)
+    assert len(panel.tic_plot.lines) == 1
+    panel.run_list.setCurrentRow(0)
+    assert panel.current_run() is first
+    assert panel.spectrum["run"] is first and panel.spectrum["provenance"]["scans"] == 10
+    assert panel.tic_header.text() == "クロマトグラム - pos: TIC +"
+    assert panel.pane_header.text() == "比較スペクトル"
+    panel.close_current_run()
+    assert panel.run_list.count() == 1 and panel.current_run() is second
+    panel.close_current_run()
+    assert panel.spectrum is None and panel.tic_header.text() == "クロマトグラム"

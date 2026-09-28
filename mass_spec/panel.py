@@ -1,18 +1,20 @@
 """MS ビューア(ドックパネル「MS スペクトル」)。
 
-上端にメニューバーとツールバー、その下に3段: TIC(1段目)、選んだ時間範囲のスペクトル(2段目)、
-実測のコピーや計算パターンを1つずつ置く枠(3段目、数はツールバーで変える)。
-計算・照合と表示設定はメニューから別ウィンドウで開く(windows.py)。
+上端にメニューバー、左に開いた測定の一覧(チェックで TIC の表示、クリックで2段目の対象)、右に3段:
+TIC(1段目)、選んだ時間範囲のスペクトル(2段目)、実測のコピーや計算パターンを1つずつ置く枠(3段目)。
+照合・時間範囲・表示設定はメニューから別ウィンドウで開く(windows.py)。
 """
 import os
 import time
 
 import numpy as np
+from matplotlib import colormaps
+from matplotlib.colors import to_hex
 from PySide6.QtCore import QProcess, Qt, QTimer
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMenu, QMenuBar, QMessageBox, QPushButton,
-    QScrollArea, QSplitter, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMenuBar, QMessageBox,
+    QPushButton, QScrollArea, QSplitter, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import convert
@@ -36,6 +38,24 @@ MAX_PANES = 8
 PEAK_FLOOR = 1e-3
 RECOMPUTE_DELAY_MS = 250
 
+# 測定ごとの TIC の色。Qt に渡すので #rrggbb にしておく
+RUN_COLORS = [to_hex(c) for c in colormaps["tab10"].colors]
+
+
+def _header(text):
+    """各段の題名の帯(DataAnalysis の窓の題名に似せる)。色は本体のテーマのパレットから取る。"""
+    label = QLabel(text)
+    label.setStyleSheet("QLabel { background: palette(highlight); color: palette(highlighted-text);"
+                        " font-weight: 600; padding: 2px 6px; }")
+    return label
+
+
+def _color_icon(color):
+    pixmap = QPixmap(12, 12)
+    pixmap.fill(QColor(color))
+    return QIcon(pixmap)
+
+
 MSCONVERT_MISSING = (
     "ProteoWizard の msconvert が見つかりません。\n\n"
     "https://proteowizard.sourceforge.io/download.html から Windows 64-bit 版"
@@ -45,12 +65,14 @@ MSCONVERT_MISSING = (
 HELP_TEXT = """\
 MS ビューア(MS スペクトル パネル)
 
+左の一覧: チェックでその測定の TIC を表示、名前をクリックでその測定を2段目の対象にする。
+左の一覧: チェックでその測定の TIC を表示、名前をクリックでその測定を2段目の対象にする。
 1段目 TIC: 左ドラッグで試料の時間範囲、Shift+左ドラッグで背景の範囲。帯の端をドラッグで伸縮、帯の中で移動。
 クリックでその時刻の1スキャン。
 2段目 スペクトル: 選んだ範囲の平均(背景を引く設定なら差し引き後)。左ドラッグでその m/z 範囲に拡大、
 Ctrl+左ドラッグで矩形の拡大、Shift+左ドラッグで Δm/z を測る(同位体の間隔なら電荷数も)。ピークをクリックでラベルを固定。
 右クリックで「3段目の枠にコピー」や転送。
-3段目 枠: 実測のコピーか計算パターンを1つずつ。枠の数はツールバーで、横軸を枠どうしで同期するかも切り替えられる。
+3段目 枠: 実測のコピーか計算パターンを1つずつ。枠の数と、横軸を枠どうしで同期するかは3段目の下で切り替える。
 
 軸の上: ホイールで拡大縮小、左ドラッグで表示範囲をずらす。
 グラフの中: ホイールで拡大縮小(Shift で縦)、中ボタンドラッグでパン、ダブルクリックで全体、Backspace で1つ前。
@@ -96,10 +118,6 @@ class MassSpecPanel(QWidget):
         outer.setMenuBar(self.menu_bar)
         self._build_menus()
 
-        row = QHBoxLayout()
-        self.run_combo = QComboBox()
-        self.run_combo.setMinimumContentsLength(16)
-        self.run_combo.currentIndexChanged.connect(self._on_run_selected)
         self.pane_spin = QSpinBox()
         self.pane_spin.setRange(1, MAX_PANES)
         self.pane_spin.setValue(self.settings["pane_count"])
@@ -111,19 +129,31 @@ class MassSpecPanel(QWidget):
         self.cancel_button = QPushButton("変換を中止")
         self.cancel_button.clicked.connect(self.cancel_conversion)
         self.cancel_button.hide()
-        row.addWidget(QLabel("測定"))
-        row.addWidget(self.run_combo, 1)
-        outer.addLayout(row)
         self.last_status = ""
 
+        # 左に測定の一覧、右に3段のグラフ
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        outer.addWidget(self.main_splitter, 1)
+        self.run_list = QListWidget()
+        self.run_list.setMinimumWidth(140)
+        self.run_list.setToolTip("チェックで TIC を表示、名前をクリックでその測定のスペクトルを2段目に出す")
+        self.run_list.currentRowChanged.connect(self._on_run_selected)
+        self.run_list.itemChanged.connect(self._on_run_item_changed)
+        self.main_splitter.addWidget(self.run_list)
 
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setChildrenCollapsible(False)
-        outer.addWidget(self.splitter, 1)
+        self.main_splitter.addWidget(self.splitter)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setSizes([170, 800])
 
         tic_box = QWidget()
         tic_layout = QVBoxLayout(tic_box)
         tic_layout.setContentsMargins(0, 0, 0, 0)
+        tic_layout.setSpacing(0)
+        self.tic_header = _header("クロマトグラム")
+        tic_layout.addWidget(self.tic_header)
         self.tic_plot = TicPlot()
         self.tic_plot.range_changing.connect(self._on_tic_range_changing)
         self.tic_plot.range_changed.connect(self._on_tic_range_changed)
@@ -135,6 +165,9 @@ class MassSpecPanel(QWidget):
         spectrum_box = QWidget()
         spectrum_layout = QVBoxLayout(spectrum_box)
         spectrum_layout.setContentsMargins(0, 0, 0, 0)
+        spectrum_layout.setSpacing(0)
+        self.spectrum_header = _header("スペクトル")
+        spectrum_layout.addWidget(self.spectrum_header)
         self.spectrum_plot = SpectrumPlot()
         self.spectrum_plot.hover_text.connect(self._show_readout)
         self.spectrum_plot.measured.connect(self._show_readout)
@@ -148,6 +181,9 @@ class MassSpecPanel(QWidget):
         pane_box = QWidget()
         pane_box_layout = QVBoxLayout(pane_box)
         pane_box_layout.setContentsMargins(0, 0, 0, 0)
+        pane_box_layout.setSpacing(0)
+        self.pane_header = _header("比較スペクトル")
+        pane_box_layout.addWidget(self.pane_header)
         self.pane_area = QScrollArea()
         self.pane_area.setWidgetResizable(True)
         self.pane_container = QWidget()
@@ -360,12 +396,43 @@ class MassSpecPanel(QWidget):
             QGuiApplication.restoreOverrideCursor()
         if display_name:
             run.display_name = display_name
+        used = {getattr(r, "color", None) for r in self.runs}
+        run.color = next((c for c in RUN_COLORS if c not in used), RUN_COLORS[len(self.runs) % len(RUN_COLORS)])
         self.runs.append(run)
-        polarity = {1: "+", -1: "−"}.get(run.polarity(), "±")
-        self.run_combo.addItem(f"{self._run_name(run)}({polarity}、{len(run.ms1_scans())} スキャン)")
-        self.run_combo.setCurrentIndex(len(self.runs) - 1)
+        item = QListWidgetItem(_color_icon(run.color), self._run_name(run))
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        item.setCheckState(Qt.CheckState.Checked)
+        item.setToolTip(f"{run.path}\n{self._polarity_text(run)}、{len(run.ms1_scans())} スキャン")
+        self.run_list.blockSignals(True)
+        self.run_list.addItem(item)
+        self.run_list.blockSignals(False)
+        self.run_list.setCurrentRow(len(self.runs) - 1)
         self._status(f"{self._run_name(run)} を読み込みました({elapsed:.1f} 秒)")
         return run
+
+    @staticmethod
+    def _polarity_text(run):
+        return {1: "正イオン (+)", -1: "負イオン (−)"}.get(run.polarity(), "極性混在")
+
+    def _tic_visible(self, index):
+        item = self.run_list.item(index)
+        return item is not None and item.checkState() == Qt.CheckState.Checked
+
+    def redraw_tics(self, keep_view=True):
+        """チェックした測定の TIC を重ね、フォーカスしている測定を太く描く。範囲の帯はフォーカスの測定のもの。"""
+        current = self.current_run()
+        traces = [{"times": run.times(), "tics": run.tics(), "color": run.color, "focused": run is current}
+                  for i, run in enumerate(self.runs) if self._tic_visible(i)]
+        self.tic_plot.set_traces(traces, keep_view=keep_view)
+        if current is not None:
+            self._show_ranges(self.ranges[current.path])
+            sign = {1: "+", -1: "−"}.get(current.polarity(), "±")
+            self.tic_header.setText(f"クロマトグラム - {self._run_name(current)}: TIC {sign}")
+        else:
+            self.tic_header.setText("クロマトグラム")
+
+    def _on_run_item_changed(self, _item):
+        self.redraw_tics()
 
     @staticmethod
     def _run_name(run):
@@ -479,31 +546,36 @@ class MassSpecPanel(QWidget):
         self._status("変換を中止しました")
 
     def close_current_run(self):
-        i = self.run_combo.currentIndex()
+        i = self.run_list.currentRow()
         if i < 0:
             return
         run = self.runs.pop(i)
         self.ranges.pop(run.path, None)
-        self.run_combo.removeItem(i)
-        if not self.runs:
-            self.tic_plot.set_data([], [])
+        self.run_list.blockSignals(True)
+        self.run_list.takeItem(i)
+        self.run_list.blockSignals(False)
+        if self.runs:
+            self.run_list.setCurrentRow(min(i, len(self.runs) - 1))
+            self._on_run_selected(self.run_list.currentRow())
+        else:
+            self.redraw_tics(keep_view=False)
             self.spectrum_plot.clear()
             self.spectrum = None
+            self.spectrum_header.setText("スペクトル")
             self._status("測定を開いてください")
 
     # ================================================================ 範囲とスペクトル
     def current_run(self):
-        i = self.run_combo.currentIndex()
+        i = self.run_list.currentRow()
         return self.runs[i] if 0 <= i < len(self.runs) else None
 
     def _on_run_selected(self, index):
         run = self.current_run()
         if run is None:
             return
-        self.tic_plot.set_data(run.times(), run.tics())
         # 開いた直後は全範囲を試料にし、背景はなし。同じ測定に戻ったときは前の範囲を使う
-        ranges = self.ranges.setdefault(run.path, {"sample": self._full_range(run), "background": None})
-        self._show_ranges(ranges)
+        self.ranges.setdefault(run.path, {"sample": self._full_range(run), "background": None})
+        self.redraw_tics(keep_view=len(self.runs) > 1)
         self.compute_spectrum(keep_view=False)
 
     @staticmethod
@@ -593,6 +665,7 @@ class MassSpecPanel(QWidget):
         if not scans:
             self.spectrum = None
             self.spectrum_plot.clear()
+            self.spectrum_header.setText(f"スペクトル - {self._run_name(run)}(選んだ時間範囲にスキャンがありません)")
             self._status("選んだ時間範囲にスキャンがありません")
             return
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -619,6 +692,8 @@ class MassSpecPanel(QWidget):
         self.spectrum = {"mz": mz, "y": y, "peaks": peaks, "name": name, "provenance": provenance, "run": run}
         shown_mz, shown_y = compact_zeros(mz, y)
         self.spectrum_plot.set_spectrum(shown_mz, shown_y, peaks, keep_view=keep_view)
+        average = f"{len(scans)} スキャンの平均" if len(scans) > 1 else "1 スキャン"
+        self.spectrum_header.setText(f"スペクトル - {name}({average})")
         self._status(f"{name}({len(scans)} スキャンの平均"
                      + (f"、背景 {len(bg_scans)} スキャン" if bg_scans else "") + ")")
         if self.calc is not None:
