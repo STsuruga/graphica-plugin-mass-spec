@@ -28,7 +28,7 @@ def spin(minimum, maximum, value, decimals=3, step=0.1, width=90):
 
 
 class CalcWindow(QWidget):
-    """組成式・付加イオン・分解能を入れて計算し、照合表を出す。結果は3段目の枠・2段目・本体のプロットへ出せる。"""
+    """組成式・付加イオン・分解能を入れて計算し、照合表を出す。結果は3段目の枠と本体のプロットへ出せる。"""
 
     def __init__(self, viewer):
         super().__init__(viewer, Qt.WindowType.Window)
@@ -54,8 +54,9 @@ class CalcWindow(QWidget):
         row = QHBoxLayout()
         self.resolution_spin = spin(0, 1e7, s["resolution"], decimals=0, step=1000)
         self.resolution_spin.setSpecialValueText("実測から")
-        self.tolerance_spin = spin(1, 5000, s["tolerance_ppm"], decimals=1, step=5, width=70)
+        self.tolerance_spin = spin(1, 5000, s["tolerance_ppm"], decimals=1, step=5, width=90)
         row.addWidget(self.resolution_spin)
+        row.addSpacing(20)
         row.addWidget(QLabel("探す幅 ±ppm"))
         row.addWidget(self.tolerance_spin)
         row.addStretch(1)
@@ -66,11 +67,8 @@ class CalcWindow(QWidget):
         self.calc_button = QPushButton("計算")
         self.calc_button.setDefault(True)
         self.calc_button.clicked.connect(viewer.run_calculation)
-        self.overlay_check = QCheckBox("2段目に重ねる")
-        self.overlay_check.setChecked(True)
-        self.overlay_check.toggled.connect(lambda _on: viewer.show_overlays())
+
         row.addWidget(self.calc_button)
-        row.addWidget(self.overlay_check)
         row.addStretch(1)
         layout.addLayout(row)
         self.summary = QLabel("")
@@ -86,21 +84,12 @@ class CalcWindow(QWidget):
         self.pane_combo = QComboBox()
         self.to_pane_button = QPushButton("選んだ付加イオンを枠に表示")
         self.to_pane_button.clicked.connect(self._send_selected_to_pane)
-        self.found_to_panes_button = QPushButton("検出されたものを枠 1 から順に")
-        self.found_to_panes_button.clicked.connect(viewer.found_patterns_to_panes)
+        self.transfer_button = QPushButton("計算パターンをプロットに転送")
+        self.transfer_button.clicked.connect(viewer.transfer_calculation)
         row.addWidget(QLabel("3段目の枠"))
         row.addWidget(self.pane_combo)
         row.addWidget(self.to_pane_button)
-        row.addWidget(self.found_to_panes_button)
-        row.addStretch(1)
-        layout.addLayout(row)
-        row = QHBoxLayout()
-        self.transfer_button = QPushButton("計算パターンをプロットに転送")
-        self.transfer_button.clicked.connect(viewer.transfer_calculation)
-        self.copy_button = QPushButton("表をコピー")
-        self.copy_button.clicked.connect(viewer.copy_table)
         row.addWidget(self.transfer_button)
-        row.addWidget(self.copy_button)
         row.addStretch(1)
         layout.addLayout(row)
         self.update_pane_choices(viewer.pane_count())

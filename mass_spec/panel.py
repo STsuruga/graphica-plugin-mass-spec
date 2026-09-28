@@ -865,20 +865,11 @@ class MassSpecPanel(QWidget):
             f"{format_formula(counts)}  モノアイソトピック質量 {monoisotopic_mass(counts):.{self.settings['mz_decimals']}f}"
             f"  平均分子量 {average_mass(counts):.4f}\n{target}")
         self._show_calc_table()
-        self.show_overlays()
 
     def _overlay_colors(self):
         cycle = self.ctx.active_color_cycle() or ["#d62728"]
         return cycle[1:] + cycle[:1] if len(cycle) > 1 else cycle
 
-    def show_overlays(self):
-        overlays = []
-        if self.calc is not None and self.spectrum is not None and self.calc_window.overlay_check.isChecked():
-            colors = self._overlay_colors()
-            for i, r in enumerate(self._found_results()):
-                sx, sy = r.sticks()
-                overlays.append((sx, sy, colors[i % len(colors)], r.pattern.adduct.notation, "stick"))
-        self.spectrum_plot.set_overlays(overlays)
 
     def _found_results(self):
         if self.calc is None:
@@ -916,19 +907,6 @@ class MassSpecPanel(QWidget):
             return
         self.show_in_pane(index, item)
 
-    def found_patterns_to_panes(self):
-        if self.calc is None:
-            return
-        chosen = [r.pattern.adduct.notation for r in self._found_results()]
-        if not chosen and self.spectrum is None:
-            chosen = [a for a, r in zip(self.calc["adducts"], self.calc["results"]) if not isinstance(r, Exception)]
-        if not chosen:
-            self.ctx.show_message("実測に見つかった付加イオンがありません。", "MS パック")
-            return
-        if len(chosen) > len(self.panes):
-            self.set_pane_count(min(MAX_PANES, len(chosen)))
-        for i, adduct in enumerate(chosen[:len(self.panes)]):
-            self.pattern_to_pane(adduct, i)
 
     def calc_rows(self):
         """表の行(表示用の文字列)。"""
@@ -961,13 +939,6 @@ class MassSpecPanel(QWidget):
 
     def _show_calc_table(self):
         self.calc_window.show_table(*self.calc_rows())
-
-    def copy_table(self):
-        header, rows = self.calc_rows()
-        if not rows:
-            return
-        QGuiApplication.clipboard().setText("\n".join("\t".join(r) for r in [header, *rows]))
-        self._status("照合表をコピーしました")
 
     # ================================================================ 転送
     def _next_color(self):

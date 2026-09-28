@@ -130,10 +130,7 @@ def test_calculation_window_matches_and_overlays(panel, mzml):
     assert na[-1] == "検出" and na[3]
     assert {r[-1] for r in rows if r[0] == "[M+H]+"} == {"未検出"}
     assert panel.calc_window.table.rowCount() == len(rows)
-    assert len(panel.spectrum_plot._overlays) == 1
     assert "C6H12O6" in panel.calc_window.summary.text()
-    panel.calc_window.overlay_check.setChecked(False)
-    assert panel.spectrum_plot._overlays == []
 
 
 def test_calculation_without_a_measurement(panel, ctx):
@@ -167,7 +164,8 @@ def test_found_patterns_fill_panes_and_one_item_per_pane(panel, mzml):
     _open_all(panel, mzml)
     panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
     _calculate(panel, extra="[M+H]+")
-    panel.found_patterns_to_panes()
+    panel.calc_window.table.selectRow(2 * 4)   # [M+Na]+ の M の行(正の標準は 1 付加イオン 2 行: M・M+1)
+    panel.pattern_to_pane("[M+Na]+", 0)
     item = panel.panes[0].item
     assert item["kind"] == "calc" and "[M+Na]+" in item["name"]
     assert panel.panes[1].item is None
@@ -239,7 +237,7 @@ def test_pane_contents_can_be_transferred(panel, mzml, ctx):
     panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
     panel.copy_spectrum_to_pane(0)
     _calculate(panel)
-    panel.found_patterns_to_panes()  # 枠 1 を計算パターンで置き換える
+    panel.pattern_to_pane("[M+Na]+", 0)  # 枠 1 を計算パターンで置き換える
     panel.copy_spectrum_to_pane(1)
     panel.transfer_pane(panel.panes[0])
     panel.transfer_pane(panel.panes[1])

@@ -509,12 +509,13 @@ class SpectrumPlot(InteractivePlot):
             visible = [p.height for p in self.peaks if x0 <= p.mz <= x1]
             base = max(visible) if visible else None
             # 同位体でまとめたシグナルごとにいちばん強いピークと、固定したピークは必ず出す。
-            # ほかは、強い順に、出したラベルともスペクトルの線とも重ならないときだけ出す
+            # ほかは、強い順に、出したラベルともスペクトルの線とも重ならないときだけ出す。グラフの枠からはみ出すラベルはどれも出さない
             must = {id(p) for p in cluster_heads(chosen)}
             pinned_ids = {id(p) for p in chosen if self._is_pinned(p.mz)}
             must |= pinned_ids
             order = sorted(chosen, key=lambda p: (id(p) not in must, -p.height))
             renderer = self.figure.canvas.get_renderer()
+            area = self.ax.get_window_extent(renderer)
             boxes = []
             for p in order:
                 text = self.label_format.label(p.mz, p.height, base)
@@ -523,7 +524,8 @@ class SpectrumPlot(InteractivePlot):
                     fontsize=7.5, color=self.foreground, fontweight="bold" if id(p) in pinned_ids else "normal",
                     clip_on=True)
                 box = artist.get_window_extent(renderer)
-                if id(p) not in must and (any(box.overlaps(b) for b in boxes) or self._covers_data(box)):
+                clipped = box.x0 < area.x0 or box.x1 > area.x1 or box.y0 < area.y0 or box.y1 > area.y1
+                if clipped or (id(p) not in must and (any(box.overlaps(b) for b in boxes) or self._covers_data(box))):
                     artist.remove()
                     continue
                 boxes.append(box)

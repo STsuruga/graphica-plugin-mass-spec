@@ -220,3 +220,11 @@ def test_labels_use_the_share_of_the_strongest_peak_in_view(spectrum):
     spectrum.label_mode = "none"
     spectrum.update_labels()
     assert spectrum.labeled_texts() == []
+
+
+def test_labels_that_would_be_cut_off_are_hidden(spectrum):
+    spectrum.label_percent = 20.0
+    spectrum.set_view((440.0, 460.0), (0.0, 100.5))   # 450 の頂点のすぐ上で枠が切れる
+    assert all(not t.startswith("450.0") for t in spectrum.labeled_texts())
+    spectrum.set_view((440.0, 460.0), (0.0, 130.0))
+    assert any(t.startswith("450.0") for t in spectrum.labeled_texts())
