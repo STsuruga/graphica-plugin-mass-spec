@@ -283,8 +283,10 @@ def test_open_d_converts_once_then_uses_the_cache(panel, ctx, tmp_path):
     panel.settings["msconvert_path"] = sys.executable
     d = _fake_d(tmp_path)
     panel.open_d(str(d))
-    assert panel.cancel_button.isVisibleTo(panel) and panel.cancel_action.isEnabled()
+    assert panel.progress_row.isVisibleTo(panel) and panel.cancel_action.isEnabled()
+    assert "変換中" in panel.progress_label.text()
     _wait(lambda: panel._process is None)
+    assert not panel.progress_row.isVisibleTo(panel)
     assert panel.run_combo.count() == 1
     assert panel.run_combo.currentText().startswith("measure")
     calls = (d / "calls.txt").read_text().splitlines()

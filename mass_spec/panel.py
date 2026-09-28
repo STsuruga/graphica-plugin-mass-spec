@@ -113,11 +113,17 @@ class MassSpecPanel(QWidget):
         self.cancel_button.hide()
         row.addWidget(QLabel("測定"))
         row.addWidget(self.run_combo, 1)
-        row.addWidget(self.cancel_button)
         outer.addLayout(row)
-        self.status_label = QLabel("ファイル ▸ .d を開く で測定を開いてください(ProteoWizard の msconvert で自動的に変換します)")
-        self.status_label.setWordWrap(True)
-        outer.addWidget(self.status_label)
+        # 変換中だけ出す(数秒かかるので、何も出ないと止まったように見える)
+        self.progress_row = QWidget()
+        progress_layout = QHBoxLayout(self.progress_row)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.progress_label = QLabel("")
+        progress_layout.addWidget(self.progress_label, 1)
+        progress_layout.addWidget(self.cancel_button)
+        self.progress_row.hide()
+        outer.addWidget(self.progress_row)
+        self.last_status = ""
 
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setChildrenCollapsible(False)
@@ -238,7 +244,8 @@ class MassSpecPanel(QWidget):
         self.readout_label.setText(text)
 
     def _status(self, text):
-        self.status_label.setText(text)
+        """画面には出さない(状態の行は置かない)。直近の内容はテストと調査のために持っておく。"""
+        self.last_status = text
 
     # ================================================================ 3段目の枠
     def pane_count(self):
@@ -410,6 +417,7 @@ class MassSpecPanel(QWidget):
         self._show_conversion_progress()
 
     def _set_converting(self, converting):
+        self.progress_row.setVisible(converting)
         self.cancel_button.setVisible(converting)
         self.cancel_action.setEnabled(converting)
         self.open_d_action.setEnabled(not converting)
@@ -417,7 +425,7 @@ class MassSpecPanel(QWidget):
     def _show_conversion_progress(self):
         if self._pending:
             elapsed = time.monotonic() - self._convert_started
-            self._status(f"{self._pending[2]} を mzML に変換中… {elapsed:.0f} 秒")
+            self.progress_label.setText(f"{self._pending[2]} を mzML に変換中… {elapsed:.0f} 秒")
 
     def _end_conversion(self):
         self._elapsed_timer.stop()
