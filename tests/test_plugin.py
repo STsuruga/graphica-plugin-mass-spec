@@ -62,7 +62,7 @@ def test_built_zip_installs_and_loads_like_graphica(tmp_path):
     (tmp_path / "plugins").mkdir()  # 本体のプラグインフォルダは常にある
     folder = install_zip_like_graphica(zip_path, str(tmp_path / "plugins"))
     assert folder == "mass_spec"
-    _api, record = load_plugin_like_graphica(str(tmp_path / "plugins" / folder), work_dir=str(tmp_path / "work"))
+    _api, record = load_plugin_like_graphica(str(tmp_path / "plugins" / folder), work_dir=str(tmp_path))
     assert record["error"] is None
 
 
