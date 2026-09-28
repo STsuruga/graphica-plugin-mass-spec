@@ -45,6 +45,12 @@ def test_loads_like_graphica(tmp_path):
     assert record["error"] is None
     assert api.get_plot_type("Stick") is not None
     assert api.get_importer_for_extension(".MZML") is not None
+    # パネルの import は遅延なので、本番の経路で作って相対 import の誤りを捕まえる
+    from graphica.plugin.testing import FakePluginContext
+    panel = next(p for p in api.get_panels() if p.name == "MS スペクトル")
+    widget = panel.widget_factory(FakePluginContext(data_dir=str(tmp_path / "data")))
+    assert widget.spectrum_plot is not None
+    widget.close()
 
 
 @requires_graphica
