@@ -1,6 +1,6 @@
 {
   "name": "Mass Spec Pack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "api_version": "2.0",
   "author": "STsuruga",
   "description": "mzML と Bruker .d(msconvert で自動変換)の読み込み、TIC・平均スペクトル、組成式からの同位体パターンの照合(P-316)",

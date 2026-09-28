@@ -1,4 +1,9 @@
-"""ドックパネル「MS スペクトル」。測定を開き、TIC から範囲を選んで平均し、ラベル・照合・本体への転送を行う。"""
+"""MS ビューア(ドックパネル「MS スペクトル」)。
+
+上端にメニューバーとツールバー、その下に3段: TIC(1段目)、選んだ時間範囲のスペクトル(2段目)、
+実測のコピーや計算パターンを1つずつ置く枠(3段目、数はツールバーで変える)。
+計算・照合と表示設定はメニューから別ウィンドウで開く(windows.py)。
+"""
 import os
 import time
 
@@ -6,28 +11,27 @@ import numpy as np
 from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSpinBox,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMenu, QMenuBar, QMessageBox, QPushButton,
+    QScrollArea, QSplitter, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import convert
-from .analyzer import PRESET_NEGATIVE, PRESET_NONE, PRESET_POSITIVE
 from .chemistry import (
-    NEGATIVE_STANDARD, POSITIVE_STANDARD, FormulaError, average_mass, format_formula, ion_pattern,
-    monoisotopic_mass, parse_adduct, parse_formula, split_adducts,
+    NEGATIVE_STANDARD, POSITIVE_STANDARD, FormulaError, average_mass, format_formula, gaussian_profile,
+    ion_pattern, monoisotopic_mass, parse_adduct, parse_formula, split_adducts,
 )
-from .datasets import centroid_dataset, pattern_datasets, range_text, spectrum_dataset, stick_dataset, tic_dataset
+from .datasets import (
+    centroid_dataset, pattern_datasets, range_text, spectrum_dataset, stick_dataset, tic_dataset,
+)
 from .matching import DEFAULT_RESOLUTION, match_all
 from .mzml import MzmlError, read_mzml
-from .plots import SpectrumPlot, TicPlot
+from .plots import PanePlot, SpectrumPlot, TicPlot
 from .settings import load_settings, save_settings
 from .spectra import LabelFormat, average_spectrum, compact_zeros, find_peaks, subtract_background
+from .windows import CalcWindow, SettingsWindow, spin
 
 PANEL_NAME = "MS スペクトル"
-PRESETS = [PRESET_POSITIVE, PRESET_NEGATIVE, PRESET_NONE]
-LABEL_MODES = [("top", "強い順に N 本"), ("percent", "相対強度 % 以上"), ("none", "表示しない")]
-INTENSITY_MODES = [("none", "なし"), ("relative", "相対 %"), ("absolute", "絶対値")]
+MAX_PANES = 8
 # ノイズの極大まで拾うとピークが数万になるので、最大の 0.1% 未満は拾わない
 PEAK_FLOOR = 1e-3
 RECOMPUTE_DELAY_MS = 250
@@ -38,16 +42,22 @@ MSCONVERT_MISSING = (
     "(ベンダー形式を読める版)をインストールしてください。\n"
     "別の場所に入れた場合は、次の画面で msconvert.exe を選べます。")
 
+HELP_TEXT = """\
+MS ビューア(MS スペクトル パネル)
 
-def _spin(minimum, maximum, value, decimals=3, step=0.1, width=80):
-    box = QDoubleSpinBox()
-    box.setDecimals(decimals)
-    box.setRange(minimum, maximum)
-    box.setSingleStep(step)
-    box.setValue(value)
-    box.setMaximumWidth(width)
-    box.setKeyboardTracking(False)
-    return box
+1段目 TIC: 左ドラッグで試料の時間範囲、Shift+左ドラッグで背景の範囲。帯の端をドラッグで伸縮、帯の中で移動。
+クリックでその時刻の1スキャン。
+2段目 スペクトル: 選んだ範囲の平均(背景を引く設定なら差し引き後)。左ドラッグでその m/z 範囲に拡大、
+Ctrl+左ドラッグで矩形の拡大、Shift+左ドラッグで Δm/z を測る(同位体の間隔なら電荷数も)。ピークをクリックでラベルを固定。
+右クリックで「3段目の枠にコピー」や転送。
+3段目 枠: 実測のコピーか計算パターンを1つずつ。枠の数はツールバーで、横軸を枠どうしで同期するかも切り替えられる。
+
+軸の上: ホイールで拡大縮小、左ドラッグで表示範囲をずらす。
+グラフの中: ホイールで拡大縮小(Shift で縦)、中ボタンドラッグでパン、ダブルクリックで全体、Backspace で1つ前。
+
+計算 ▸ 組成式から計算・照合 で同位体パターンと付加イオンを計算し、実測と照合する(結果は枠や本体のプロットへ)。
+表示 ▸ 表示設定 でラベルの本数・桁数、背景、転送の設定。
+"""
 
 
 class MassSpecPanel(QWidget):
@@ -57,261 +67,265 @@ class MassSpecPanel(QWidget):
         self.settings = load_settings(ctx.data_dir)
         self.runs = []
         self.ranges = {}            # run.path -> {"sample": (t0, t1), "background": (t0, t1) | None}
-        self.spectrum = None        # {"mz", "y", "peaks", "name", "provenance"}
-        self.calc = None            # {"counts", "formula", "results"}
+        self.spectrum = None        # {"mz", "y", "peaks", "name", "provenance", "run"}
+        self.calc = None            # {"counts", "formula", "results", "adducts"}
+        self.panes = []
         self._process = None
-        self._pending = None        # 変換中の (d のパス, キャッシュの mzML)
+        self._pending = None        # 変換中の (d のパス, キャッシュの mzML, 表示名)
         self._convert_started = 0.0
         self._updating = False
+        self._syncing = False
         self._recompute_timer = QTimer(self)
         self._recompute_timer.setSingleShot(True)
         self._recompute_timer.timeout.connect(self.compute_spectrum)
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.timeout.connect(self._show_conversion_progress)
         self._build()
+        self.calc_window = CalcWindow(self)
+        self.settings_window = SettingsWindow(self)
         self._apply_label_settings()
+        self.set_pane_count(self.settings["pane_count"])
 
     # ================================================================ 画面
     def _build(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        outer.addWidget(scroll)
-        body = QWidget()
-        scroll.setWidget(body)
-        layout = QVBoxLayout(body)
+        outer.setContentsMargins(4, 0, 4, 4)
+        outer.setSpacing(4)
+        self.menu_bar = QMenuBar(self)
+        outer.setMenuBar(self.menu_bar)
+        self._build_menus()
 
         row = QHBoxLayout()
         self.run_combo = QComboBox()
-        self.run_combo.setMinimumContentsLength(12)
+        self.run_combo.setMinimumContentsLength(16)
         self.run_combo.currentIndexChanged.connect(self._on_run_selected)
-        self.open_d_button = QPushButton(".d を開く…")
-        self.open_d_button.clicked.connect(self._choose_d_folder)
-        self.open_mzml_button = QPushButton("mzML…")
-        self.open_mzml_button.clicked.connect(self._choose_mzml)
-        self.close_button = QPushButton("閉じる")
-        self.close_button.clicked.connect(self.close_current_run)
+        self.pane_spin = QSpinBox()
+        self.pane_spin.setRange(1, MAX_PANES)
+        self.pane_spin.setValue(self.settings["pane_count"])
+        self.pane_spin.valueChanged.connect(self.set_pane_count)
+        self.sync_check = QCheckBox("横軸を同期")
+        self.sync_check.setToolTip("3段目の枠どうしで m/z の範囲をそろえる")
+        self.sync_check.setChecked(self.settings["sync_panes"])
+        self.sync_check.toggled.connect(self._on_sync_toggled)
         self.cancel_button = QPushButton("変換を中止")
         self.cancel_button.clicked.connect(self.cancel_conversion)
         self.cancel_button.hide()
+        row.addWidget(QLabel("測定"))
         row.addWidget(self.run_combo, 1)
-        for w in (self.open_d_button, self.open_mzml_button, self.close_button, self.cancel_button):
-            row.addWidget(w)
-        layout.addLayout(row)
-        self.status_label = QLabel("測定を開いてください(.d は ProteoWizard の msconvert で自動的に変換します)")
+        row.addWidget(self.cancel_button)
+        row.addWidget(QLabel("3段目の枠"))
+        row.addWidget(self.pane_spin)
+        row.addWidget(self.sync_check)
+        outer.addLayout(row)
+        self.status_label = QLabel("ファイル ▸ .d を開く で測定を開いてください(ProteoWizard の msconvert で自動的に変換します)")
         self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
+        outer.addWidget(self.status_label)
 
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.setChildrenCollapsible(False)
+        outer.addWidget(self.splitter, 1)
+
+        tic_box = QWidget()
+        tic_layout = QVBoxLayout(tic_box)
+        tic_layout.setContentsMargins(0, 0, 0, 0)
         self.tic_plot = TicPlot()
         self.tic_plot.range_changing.connect(self._on_tic_range_changing)
         self.tic_plot.range_changed.connect(self._on_tic_range_changed)
         self.tic_plot.scan_clicked.connect(self._on_scan_clicked)
         self.tic_plot.context_requested.connect(self._tic_menu)
-        layout.addWidget(self.tic_plot)
-
+        tic_layout.addWidget(self.tic_plot, 1)
         row = QHBoxLayout()
-        self.sample_from = _spin(0, 1e4, 0)
-        self.sample_to = _spin(0, 1e4, 0)
-        self.bg_from = _spin(0, 1e4, 0)
-        self.bg_to = _spin(0, 1e4, 0)
+        self.sample_from = spin(0, 1e4, 0, width=80)
+        self.sample_to = spin(0, 1e4, 0, width=80)
+        self.bg_from = spin(0, 1e4, 0, width=80)
+        self.bg_to = spin(0, 1e4, 0, width=80)
         for box in (self.sample_from, self.sample_to, self.bg_from, self.bg_to):
             box.valueChanged.connect(self._on_range_spin_changed)
-        self.subtract_check = QCheckBox("背景を引く")
-        self.subtract_check.setChecked(self.settings["subtract_background"])
-        self.subtract_check.toggled.connect(self._on_background_option)
-        self.clip_check = QCheckBox("負は 0")
-        self.clip_check.setChecked(self.settings["clip_negative"])
-        self.clip_check.toggled.connect(self._on_background_option)
-        row.addWidget(QLabel("試料"))
-        row.addWidget(self.sample_from)
-        row.addWidget(QLabel("–"))
-        row.addWidget(self.sample_to)
-        row.addWidget(QLabel("min  背景"))
-        row.addWidget(self.bg_from)
-        row.addWidget(QLabel("–"))
-        row.addWidget(self.bg_to)
+        for widget in (QLabel("試料"), self.sample_from, QLabel("–"), self.sample_to, QLabel("min   背景"),
+                       self.bg_from, QLabel("–"), self.bg_to, QLabel("min")):
+            row.addWidget(widget)
         row.addStretch(1)
-        layout.addLayout(row)
-        row = QHBoxLayout()
-        row.addWidget(self.subtract_check)
-        row.addWidget(self.clip_check)
-        self.clear_bg_button = QPushButton("背景の範囲を解除")
-        self.clear_bg_button.clicked.connect(self.clear_background)
-        row.addWidget(self.clear_bg_button)
-        row.addStretch(1)
-        layout.addLayout(row)
+        tic_layout.addLayout(row)
+        self.splitter.addWidget(tic_box)
 
+        spectrum_box = QWidget()
+        spectrum_layout = QVBoxLayout(spectrum_box)
+        spectrum_layout.setContentsMargins(0, 0, 0, 0)
         self.spectrum_plot = SpectrumPlot()
         self.spectrum_plot.hover_text.connect(self._show_readout)
         self.spectrum_plot.measured.connect(self._show_readout)
         self.spectrum_plot.context_requested.connect(self._spectrum_menu)
-        layout.addWidget(self.spectrum_plot)
+        spectrum_layout.addWidget(self.spectrum_plot, 1)
         self.readout_label = QLabel(" ")
         self.readout_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(self.readout_label)
+        spectrum_layout.addWidget(self.readout_label)
+        self.splitter.addWidget(spectrum_box)
 
-        row = QHBoxLayout()
-        self.label_mode_combo = QComboBox()
-        for _key, text in LABEL_MODES:
-            self.label_mode_combo.addItem(text)
-        self.label_mode_combo.setCurrentIndex([k for k, _ in LABEL_MODES].index(self.settings["label_mode"]))
-        self.label_n_spin = QSpinBox()
-        self.label_n_spin.setRange(1, 200)
-        self.label_n_spin.setValue(self.settings["label_top_n"])
-        self.label_percent_spin = _spin(0.0, 100.0, self.settings["label_percent"], decimals=1, step=1.0, width=70)
-        self.mz_decimals_spin = QSpinBox()
-        self.mz_decimals_spin.setRange(0, 6)
-        self.mz_decimals_spin.setValue(self.settings["mz_decimals"])
-        self.intensity_combo = QComboBox()
-        for _key, text in INTENSITY_MODES:
-            self.intensity_combo.addItem(text)
-        self.intensity_combo.setCurrentIndex([k for k, _ in INTENSITY_MODES].index(self.settings["intensity"]))
-        for w in (self.label_mode_combo, self.intensity_combo):
-            w.currentIndexChanged.connect(self._on_label_settings_changed)
-        for w in (self.label_n_spin, self.mz_decimals_spin, self.label_percent_spin):
-            w.valueChanged.connect(self._on_label_settings_changed)
-        row.addWidget(QLabel("ラベル"))
-        row.addWidget(self.label_mode_combo)
-        row.addWidget(self.label_n_spin)
-        row.addWidget(self.label_percent_spin)
-        row.addWidget(QLabel("m/z 桁"))
-        row.addWidget(self.mz_decimals_spin)
-        row.addWidget(QLabel("強度"))
-        row.addWidget(self.intensity_combo)
-        row.addStretch(1)
-        layout.addLayout(row)
+        self.pane_area = QScrollArea()
+        self.pane_area.setWidgetResizable(True)
+        self.pane_container = QWidget()
+        self.pane_layout = QVBoxLayout(self.pane_container)
+        self.pane_layout.setContentsMargins(0, 0, 0, 0)
+        self.pane_area.setWidget(self.pane_container)
+        self.splitter.addWidget(self.pane_area)
+        self.splitter.setSizes([180, 260, 360])
 
-        layout.addWidget(self._build_calc_group())
-        layout.addWidget(self._build_transfer_group())
-        layout.addStretch(1)
+    def _build_menus(self):
+        m = self.menu_bar.addMenu("ファイル")
+        self.open_d_action = m.addAction(".d を開く…", self._choose_d_folder)
+        m.addAction("mzML を開く…", self._choose_mzml)
+        m.addSeparator()
+        m.addAction("選んでいる測定を閉じる", self.close_current_run)
+        self.cancel_action = m.addAction("変換を中止", self.cancel_conversion)
+        self.cancel_action.setEnabled(False)
+        m = self.menu_bar.addMenu("表示")
+        m.addAction("すべてのグラフを全体表示", self.reset_all_views)
+        m.addAction("3段目の枠をすべて空にする", self.clear_all_panes)
+        m.addSeparator()
+        m.addAction("表示設定…", self.open_settings_window)
+        m = self.menu_bar.addMenu("計算")
+        m.addAction("組成式から計算・照合…", self.open_calc_window)
+        m = self.menu_bar.addMenu("転送")
+        m.addAction("TIC", self.transfer_tic)
+        m.addAction("スペクトル(2段目)", self.transfer_spectrum)
+        m.addAction("centroid(2段目)", self.transfer_centroid)
+        m.addAction("ピークのラベルだけ(2段目)", lambda: self.transfer_centroid(labels_only=True))
+        m.addAction("計算パターン", self.transfer_calculation)
+        m = self.menu_bar.addMenu("ヘルプ")
+        m.addAction("使い方", lambda: self.ctx.show_message(HELP_TEXT, "MS パック"))
+        # PySide6 はメニューを Python 側で持っていないと消すことがあるので、項目を含めて保持する
+        self._menu_keepalive = [menu for menu in self.menu_bar.findChildren(QMenu)]
 
-    def _build_calc_group(self):
-        group = QGroupBox("組成式から計算")
-        form = QFormLayout(group)
-        self.formula_edit = QLineEdit(self.settings["formula"])
-        self.formula_edit.setPlaceholderText("例: C6H12O6")
-        self.formula_edit.returnPressed.connect(self.run_calculation)
-        form.addRow("組成式", self.formula_edit)
-        self.preset_combo = QComboBox()
-        self.preset_combo.addItems(PRESETS)
-        self.preset_combo.setCurrentIndex(min(max(self.settings["preset"], 0), len(PRESETS) - 1))
-        form.addRow("付加イオン", self.preset_combo)
-        self.extra_edit = QLineEdit(self.settings["extra_adducts"])
-        self.extra_edit.setPlaceholderText("追加: [2M+Na]+, [M+2H]2+")
-        self.extra_edit.returnPressed.connect(self.run_calculation)
-        form.addRow("", self.extra_edit)
-        row = QHBoxLayout()
-        self.resolution_spin = _spin(0, 1e7, self.settings["resolution"], decimals=0, step=1000, width=90)
-        self.resolution_spin.setSpecialValueText("実測から")
-        self.tolerance_spin = _spin(1, 5000, self.settings["tolerance_ppm"], decimals=1, step=5, width=70)
-        self.ppm_decimals_spin = QSpinBox()
-        self.ppm_decimals_spin.setRange(0, 3)
-        self.ppm_decimals_spin.setValue(self.settings["ppm_decimals"])
-        self.ppm_decimals_spin.valueChanged.connect(self._on_label_settings_changed)
-        row.addWidget(self.resolution_spin)
-        row.addWidget(QLabel("±ppm"))
-        row.addWidget(self.tolerance_spin)
-        row.addWidget(QLabel("ppm 桁"))
-        row.addWidget(self.ppm_decimals_spin)
-        row.addStretch(1)
-        form.addRow("分解能 R", row)
-        row = QHBoxLayout()
-        self.calc_button = QPushButton("計算して重ねる")
-        self.calc_button.clicked.connect(self.run_calculation)
-        self.copy_table_button = QPushButton("表をコピー")
-        self.copy_table_button.clicked.connect(self.copy_table)
-        row.addWidget(self.calc_button)
-        row.addWidget(self.copy_table_button)
-        row.addStretch(1)
-        form.addRow(row)
-        self.calc_summary = QLabel("")
-        self.calc_summary.setWordWrap(True)
-        self.calc_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        form.addRow(self.calc_summary)
-        self.table = QTableWidget(0, 0)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setMinimumHeight(140)
-        form.addRow(self.table)
-        return group
+    def open_calc_window(self):
+        self.calc_window.show()
+        self.calc_window.raise_()
+        self.calc_window.activateWindow()
 
-    def _build_transfer_group(self):
-        group = QGroupBox("プロットに転送")
-        layout = QVBoxLayout(group)
-        row = QHBoxLayout()
-        self.view_only_check = QCheckBox("表示中の m/z 範囲だけ")
-        self.view_only_check.setChecked(self.settings["transfer_view_only"])
-        self.view_only_check.toggled.connect(self._on_transfer_option)
-        self.subplot_spin = QSpinBox()
-        self.subplot_spin.setRange(1, 99)
-        self.subplot_spin.setValue(self.settings["subplot_target"] + 1)
-        self.subplot_spin.valueChanged.connect(self._on_transfer_option)
-        row.addWidget(self.view_only_check)
-        row.addWidget(QLabel("サブプロット"))
-        row.addWidget(self.subplot_spin)
-        row.addStretch(1)
-        layout.addLayout(row)
-        row = QHBoxLayout()
-        self.send_tic_button = QPushButton("TIC")
-        self.send_tic_button.clicked.connect(self.transfer_tic)
-        self.send_spectrum_button = QPushButton("スペクトル")
-        self.send_spectrum_button.clicked.connect(self.transfer_spectrum)
-        self.send_centroid_button = QPushButton("centroid")
-        self.send_centroid_button.clicked.connect(self.transfer_centroid)
-        self.send_labels_button = QPushButton("ラベルだけ")
-        self.send_labels_button.setToolTip("ピークのラベルを、棒を描かない Stick として送る(profile に重ねる用)")
-        self.send_labels_button.clicked.connect(lambda: self.transfer_centroid(labels_only=True))
-        self.send_calc_button = QPushButton("計算パターン")
-        self.send_calc_button.clicked.connect(self.transfer_calculation)
-        for w in (self.send_tic_button, self.send_spectrum_button, self.send_centroid_button,
-                  self.send_labels_button, self.send_calc_button):
-            row.addWidget(w)
-        row.addStretch(1)
-        layout.addLayout(row)
-        return group
+    def open_settings_window(self):
+        self.settings_window.show()
+        self.settings_window.raise_()
+        self.settings_window.activateWindow()
 
     # ================================================================ 設定
     def _save(self):
         save_settings(self.ctx.data_dir, self.settings)
+
+    def apply_settings(self, **values):
+        """設定ウィンドウなどからの変更を反映して保存する。"""
+        background_changed = any(k in values and values[k] != self.settings[k]
+                                 for k in ("subtract_background", "clip_negative"))
+        self.settings.update(values)
+        self._save()
+        self._apply_label_settings()
+        for plot in [self.spectrum_plot, *self.panes]:
+            plot.update_labels()
+        if self.calc is not None:
+            self._show_calc_table()
+        if background_changed:
+            self.compute_spectrum()
 
     def label_format(self):
         return LabelFormat(mz_decimals=self.settings["mz_decimals"], intensity=self.settings["intensity"],
                            ppm_decimals=self.settings["ppm_decimals"])
 
     def _apply_label_settings(self):
-        plot = self.spectrum_plot
-        plot.label_mode = self.settings["label_mode"]
-        plot.label_top_n = self.settings["label_top_n"]
-        plot.label_percent = self.settings["label_percent"]
-        plot.label_format = self.label_format()
-        self.label_n_spin.setVisible(plot.label_mode == "top")
-        self.label_percent_spin.setVisible(plot.label_mode == "percent")
-
-    def _on_label_settings_changed(self, *_):
-        self.settings.update(
-            label_mode=LABEL_MODES[self.label_mode_combo.currentIndex()][0],
-            label_top_n=self.label_n_spin.value(),
-            label_percent=self.label_percent_spin.value(),
-            mz_decimals=self.mz_decimals_spin.value(),
-            intensity=INTENSITY_MODES[self.intensity_combo.currentIndex()][0],
-            ppm_decimals=self.ppm_decimals_spin.value(),
-        )
-        self._apply_label_settings()
-        self.spectrum_plot.update_labels()
-        if self.calc is not None:
-            self._show_calc_table()
-        self._save()
-
-    def _on_transfer_option(self, *_):
-        self.settings["transfer_view_only"] = self.view_only_check.isChecked()
-        self.settings["subplot_target"] = self.subplot_spin.value() - 1
-        self._save()
+        for plot in [self.spectrum_plot, *self.panes]:
+            plot.label_mode = self.settings["label_mode"]
+            plot.label_top_n = self.settings["label_top_n"]
+            plot.label_percent = self.settings["label_percent"]
+            plot.label_format = self.label_format()
 
     def _show_readout(self, text):
         self.readout_label.setText(text)
 
     def _status(self, text):
         self.status_label.setText(text)
+
+    # ================================================================ 3段目の枠
+    def pane_count(self):
+        return len(self.panes)
+
+    def set_pane_count(self, count):
+        count = max(1, min(MAX_PANES, int(count)))
+        while len(self.panes) < count:
+            pane = PanePlot(len(self.panes) + 1)
+            pane.hover_text.connect(self._show_readout)
+            pane.measured.connect(self._show_readout)
+            pane.context_requested.connect(lambda pos, p=pane: self._pane_menu(p, pos))
+            pane.x_range_changed.connect(lambda lo, hi, p=pane: self._on_pane_x_changed(p, lo, hi))
+            self.pane_layout.addWidget(pane)
+            self.panes.append(pane)
+        while len(self.panes) > count:
+            pane = self.panes.pop()
+            self.pane_layout.removeWidget(pane)
+            pane.deleteLater()
+        self._apply_label_settings()
+        if self.pane_spin.value() != count:
+            self.pane_spin.setValue(count)
+        self.settings["pane_count"] = count
+        self._save()
+        if hasattr(self, "calc_window"):
+            self.calc_window.update_pane_choices(count)
+
+    def _on_sync_toggled(self, on):
+        self.settings["sync_panes"] = on
+        self._save()
+        filled = [p for p in self.panes if p.item is not None]
+        if on and filled:
+            self._on_pane_x_changed(filled[0], *filled[0].ax.get_xlim())
+
+    def _on_pane_x_changed(self, source, lo, hi):
+        if self._syncing or not self.settings["sync_panes"] or source.item is None:
+            return
+        self._syncing = True
+        try:
+            for pane in self.panes:
+                if pane is not source and pane.item is not None:
+                    pane.set_view((lo, hi), remember=False)
+        finally:
+            self._syncing = False
+
+    def show_in_pane(self, index, item):
+        if not 0 <= index < len(self.panes):
+            return
+        pane = self.panes[index]
+        pane.show_item(item)
+        others = [p for p in self.panes if p is not pane and p.item is not None]
+        if self.settings["sync_panes"] and others:
+            self._syncing = True
+            try:
+                pane.set_view(others[0].ax.get_xlim(), remember=False)
+            finally:
+                self._syncing = False
+        self._status(f"枠 {index + 1} に表示しました: {item['name']}")
+
+    def first_empty_pane(self):
+        for i, pane in enumerate(self.panes):
+            if pane.item is None:
+                return i
+        return None
+
+    def copy_spectrum_to_pane(self, index=None):
+        if self.spectrum is None:
+            return
+        if index is None:
+            index = self.first_empty_pane()
+            if index is None:
+                self.ctx.show_message("空いている枠がありません。枠の数を増やすか、枠を空にしてください。", "MS パック")
+                return
+        s = self.spectrum
+        mz, y = compact_zeros(s["mz"], s["y"])
+        self.show_in_pane(index, {"kind": "measured", "name": s["name"], "mz": mz, "y": y, "full_mz": s["mz"],
+                                  "full_y": s["y"], "peaks": list(s["peaks"]), "run": s["run"],
+                                  "provenance": dict(s["provenance"])})
+
+    def clear_all_panes(self):
+        for pane in self.panes:
+            pane.show_item(None)
+
+    def reset_all_views(self):
+        for plot in [self.tic_plot, self.spectrum_plot, *self.panes]:
+            plot.reset_view()
 
     # ================================================================ 開く
     def _choose_mzml(self):
@@ -357,7 +371,7 @@ class MassSpecPanel(QWidget):
             return
         msconvert = convert.find_msconvert(self.settings["msconvert_path"])
         if msconvert is None:
-            msconvert = self._ask_msconvert()
+            msconvert = self.ask_msconvert()
             if msconvert is None:
                 return
         cache_dir = os.path.join(self.ctx.data_dir, "mzml_cache")
@@ -370,8 +384,9 @@ class MassSpecPanel(QWidget):
             return
         self._start_conversion(msconvert, d_path, final, name)
 
-    def _ask_msconvert(self):
-        QMessageBox.information(self, "MS パック", MSCONVERT_MISSING)
+    def ask_msconvert(self, explain=True):
+        if explain:
+            QMessageBox.information(self, "MS パック", MSCONVERT_MISSING)
         path, _ = QFileDialog.getOpenFileName(self, "msconvert.exe を選ぶ", "", "msconvert (msconvert.exe);;すべて (*)")
         if not path:
             return None
@@ -397,7 +412,8 @@ class MassSpecPanel(QWidget):
 
     def _set_converting(self, converting):
         self.cancel_button.setVisible(converting)
-        self.open_d_button.setEnabled(not converting)
+        self.cancel_action.setEnabled(converting)
+        self.open_d_action.setEnabled(not converting)
 
     def _show_conversion_progress(self):
         if self._pending:
@@ -419,7 +435,7 @@ class MassSpecPanel(QWidget):
         pending, output = self._end_conversion()
         if pending is None:
             return
-        d_path, final, name = pending
+        _d_path, final, name = pending
         result = convert.finish_conversion(final) if exit_code == 0 else None
         if result is None:
             convert.finish_conversion(final)  # 作業フォルダを片付ける
@@ -476,8 +492,8 @@ class MassSpecPanel(QWidget):
             return
         times = run.times()
         self.tic_plot.set_data(times, run.tics())
-        ranges = self.ranges.setdefault(run.path, {"sample": (float(times[0]), float(times[-1])) if len(times) else (0, 0),
-                                                   "background": None})
+        full = (float(times[0]), float(times[-1])) if len(times) else (0.0, 0.0)
+        ranges = self.ranges.setdefault(run.path, {"sample": full, "background": None})
         self._show_ranges(ranges)
         self.compute_spectrum(keep_view=False)
 
@@ -534,12 +550,6 @@ class MassSpecPanel(QWidget):
         self.tic_plot.set_range("background", *(ranges["background"] or (None, None)))
         self._recompute_timer.start(RECOMPUTE_DELAY_MS)
 
-    def _on_background_option(self, *_):
-        self.settings["subtract_background"] = self.subtract_check.isChecked()
-        self.settings["clip_negative"] = self.clip_check.isChecked()
-        self._save()
-        self.compute_spectrum()
-
     def clear_background(self):
         run = self.current_run()
         if run is None:
@@ -549,7 +559,7 @@ class MassSpecPanel(QWidget):
         self.compute_spectrum()
 
     def compute_spectrum(self, keep_view=True):
-        """試料の範囲の平均(背景を引く設定なら背景の平均を引く)を作り、パネルに表示する。"""
+        """試料の範囲の平均(背景を引く設定なら背景の平均を引く)を作り、2段目に表示する。"""
         self._recompute_timer.stop()
         run = self.current_run()
         if run is None:
@@ -574,8 +584,7 @@ class MassSpecPanel(QWidget):
             peaks = find_peaks(mz, y, min_height=top * PEAK_FLOOR) if top > 0 else []
         finally:
             QGuiApplication.restoreOverrideCursor()
-        sample_text = range_text(*ranges["sample"])
-        name = f"{self._run_name(run)} {sample_text}"
+        name = f"{self._run_name(run)} {range_text(*ranges['sample'])}"
         provenance = {"plugin": "mass_spec", "source": run.path, "sample_range_min": list(ranges["sample"]),
                       "scans": len(scans)}
         if bg_scans:
@@ -593,15 +602,16 @@ class MassSpecPanel(QWidget):
 
     # ================================================================ 計算
     def _adducts(self):
-        preset = self.preset_combo.currentIndex()
+        preset = self.calc_window.preset_combo.currentIndex()
         adducts = list(POSITIVE_STANDARD if preset == 0 else NEGATIVE_STANDARD if preset == 1 else ())
-        extra = split_adducts(self.extra_edit.text())
+        extra = split_adducts(self.calc_window.extra_edit.text())
         return adducts + [a for a in extra if a not in adducts]
 
     def run_calculation(self, quiet=False):
-        self.settings.update(formula=self.formula_edit.text().strip(), preset=self.preset_combo.currentIndex(),
-                             extra_adducts=self.extra_edit.text().strip(), resolution=self.resolution_spin.value(),
-                             tolerance_ppm=self.tolerance_spin.value())
+        w = self.calc_window
+        self.settings.update(formula=w.formula_edit.text().strip(), preset=w.preset_combo.currentIndex(),
+                             extra_adducts=w.extra_edit.text().strip(), resolution=w.resolution_spin.value(),
+                             tolerance_ppm=w.tolerance_spin.value())
         self._save()
         try:
             counts = parse_formula(self.settings["formula"])
@@ -626,25 +636,75 @@ class MassSpecPanel(QWidget):
                 except FormulaError as e:
                     results.append(e)
         self.calc = {"counts": counts, "formula": format_formula(counts), "results": results, "adducts": adducts}
-        self.calc_summary.setText(
+        target = f"照合の対象: {self.spectrum['name']}" if self.spectrum else "実測なし(計算だけ)"
+        w.summary.setText(
             f"{format_formula(counts)}  モノアイソトピック質量 {monoisotopic_mass(counts):.{self.settings['mz_decimals']}f}"
-            f"  平均分子量 {average_mass(counts):.4f}")
+            f"  平均分子量 {average_mass(counts):.4f}\n{target}")
         self._show_calc_table()
-        self._show_overlays()
+        self.show_overlays()
 
     def _overlay_colors(self):
         cycle = self.ctx.active_color_cycle() or ["#d62728"]
         return cycle[1:] + cycle[:1] if len(cycle) > 1 else cycle
 
-    def _show_overlays(self):
+    def show_overlays(self):
         overlays = []
-        if self.calc is not None and self.spectrum is not None:
+        if self.calc is not None and self.spectrum is not None and self.calc_window.overlay_check.isChecked():
             colors = self._overlay_colors()
-            found = [r for r in self.calc["results"] if not isinstance(r, Exception) and getattr(r, "found", False)]
-            for i, r in enumerate(found):
+            for i, r in enumerate(self._found_results()):
                 sx, sy = r.sticks()
                 overlays.append((sx, sy, colors[i % len(colors)], r.pattern.adduct.notation, "stick"))
         self.spectrum_plot.set_overlays(overlays)
+
+    def _found_results(self):
+        if self.calc is None:
+            return []
+        return [r for r in self.calc["results"] if not isinstance(r, Exception) and getattr(r, "found", False)]
+
+    def _pattern_item(self, adduct):
+        """付加イオンの計算パターンを3段目の枠の中身にする。実測と照合したなら実測の強度に合わせる。"""
+        if self.calc is None:
+            return None
+        colors = self._overlay_colors()
+        for i, (notation, r) in enumerate(zip(self.calc["adducts"], self.calc["results"])):
+            if notation != adduct or isinstance(r, Exception):
+                continue
+            color = colors[i % len(colors)]
+            if hasattr(r, "found"):
+                pattern, resolution = r.pattern, r.resolution
+            else:
+                pattern, resolution = r, self.settings["resolution"] or DEFAULT_RESOLUTION
+            if getattr(r, "found", False):
+                px, py = r.profile()
+                sticks = r.sticks()
+            else:
+                px, py = gaussian_profile(pattern.mz, pattern.relative, resolution)
+                sticks = (pattern.mz, pattern.relative)
+            return {"kind": "calc", "name": f"{self.calc['formula']} {notation} 計算(R {resolution:.0f})",
+                    "mz": px, "y": py, "sticks": sticks, "peaks": [], "color": color, "result": r,
+                    "pattern": pattern, "resolution": resolution}
+        return None
+
+    def pattern_to_pane(self, adduct, index):
+        item = self._pattern_item(adduct)
+        if item is None:
+            self.ctx.show_message(f"{adduct} の計算結果がありません。", "MS パック")
+            return
+        self.show_in_pane(index, item)
+
+    def found_patterns_to_panes(self):
+        if self.calc is None:
+            return
+        chosen = [r.pattern.adduct.notation for r in self._found_results()]
+        if not chosen and self.spectrum is None:
+            chosen = [a for a, r in zip(self.calc["adducts"], self.calc["results"]) if not isinstance(r, Exception)]
+        if not chosen:
+            self.ctx.show_message("実測に見つかった付加イオンがありません。", "MS パック")
+            return
+        if len(chosen) > len(self.panes):
+            self.set_pane_count(min(MAX_PANES, len(chosen)))
+        for i, adduct in enumerate(chosen[:len(self.panes)]):
+            self.pattern_to_pane(adduct, i)
 
     def calc_rows(self):
         """表の行(表示用の文字列)。"""
@@ -676,22 +736,13 @@ class MassSpecPanel(QWidget):
         return header, rows
 
     def _show_calc_table(self):
-        header, rows = self.calc_rows()
-        self.table.clear()
-        self.table.setColumnCount(len(header))
-        self.table.setHorizontalHeaderLabels(header)
-        self.table.setRowCount(len(rows))
-        for i, row in enumerate(rows):
-            for j, value in enumerate(row):
-                self.table.setItem(i, j, QTableWidgetItem(value))
-        self.table.resizeColumnsToContents()
+        self.calc_window.show_table(*self.calc_rows())
 
     def copy_table(self):
         header, rows = self.calc_rows()
         if not rows:
             return
-        text = "\n".join("\t".join(r) for r in [header, *rows])
-        QGuiApplication.clipboard().setText(text)
+        QGuiApplication.clipboard().setText("\n".join("\t".join(r) for r in [header, *rows]))
         self._status("照合表をコピーしました")
 
     # ================================================================ 転送
@@ -704,70 +755,81 @@ class MassSpecPanel(QWidget):
         self.ctx.add_dataset(dataset, description=f"[MS] {what}を追加")
         self._status(f"追加しました: {dataset.name}")
 
-    def _view_range(self):
-        return self.spectrum_plot.ax.get_xlim() if self.settings["transfer_view_only"] else None
-
     def transfer_tic(self):
         run = self.current_run()
         if run is None:
             return
         self._add(tic_dataset(run, self._next_color(), {"plugin": "mass_spec", "source": run.path}), "TIC ")
 
-    def transfer_spectrum(self, view_only=None):
-        if self.spectrum is None:
-            return
-        s = self.spectrum
-        x_range = self.spectrum_plot.ax.get_xlim() if view_only else (None if view_only is False else self._view_range())
-        name = s["name"] + (f" (m/z {x_range[0]:.0f}–{x_range[1]:.0f})" if x_range else "")
-        ds = spectrum_dataset(name, s["mz"], s["y"], self._next_color(), s["run"].path, dict(s["provenance"]),
+    def _transfer_measured(self, source, plot, view_only=None):
+        if view_only is None:
+            view_only = self.settings["transfer_view_only"]
+        x_range = plot.ax.get_xlim() if view_only else None
+        name = source["name"] + (f" (m/z {x_range[0]:.0f}–{x_range[1]:.0f})" if x_range else "")
+        mz = source.get("full_mz", source["mz"])
+        y = source.get("full_y", source["y"])
+        ds = spectrum_dataset(name, mz, y, self._next_color(), source["run"].path, dict(source["provenance"]),
                               x_range=x_range)
         self._add(ds, "スペクトル")
 
-    def transfer_centroid(self, labels_only=False):
-        if self.spectrum is None or not self.spectrum["peaks"]:
-            return
-        s = self.spectrum
-        peaks = s["peaks"]
-        x_range = self._view_range()
-        if x_range:
-            peaks = [p for p in peaks if x_range[0] <= p.mz <= x_range[1]]
+    def transfer_spectrum(self, view_only=None):
+        if self.spectrum is not None:
+            self._transfer_measured(self.spectrum, self.spectrum_plot, view_only)
+
+    def _transfer_peaks(self, source, plot, labels_only=False):
+        peaks = source["peaks"]
+        if self.settings["transfer_view_only"]:
+            lo, hi = plot.ax.get_xlim()
+            peaks = [p for p in peaks if lo <= p.mz <= hi]
         if not peaks:
             return
         mode = self.settings["label_mode"]
         ds = centroid_dataset(
-            s["name"] + (" ラベル" if labels_only else " centroid"), peaks, self._next_color(), self.label_format(),
+            source["name"] + (" ラベル" if labels_only else " centroid"), peaks, self._next_color(),
+            self.label_format(),
             label_top_n=self.settings["label_top_n"] if mode == "top" else (None if mode == "percent" else 0),
             label_min_relative=self.settings["label_percent"] if mode == "percent" else None,
-            min_relative=self.settings["centroid_min_percent"], source_file=s["run"].path,
-            provenance=dict(s["provenance"], kind="centroid"), labels_only=labels_only,
-            pinned=self.spectrum_plot.pinned)
+            min_relative=self.settings["centroid_min_percent"], source_file=source["run"].path,
+            provenance=dict(source["provenance"], kind="centroid"), labels_only=labels_only, pinned=plot.pinned)
         self._add(ds, "ピークのラベル" if labels_only else "centroid ")
+
+    def transfer_centroid(self, labels_only=False):
+        if self.spectrum is not None:
+            self._transfer_peaks(self.spectrum, self.spectrum_plot, labels_only)
+
+    def _calc_datasets(self, item):
+        fmt = self.label_format()
+        r = item["result"]
+        provenance = {"plugin": "mass_spec", "formula": self.calc["formula"] if self.calc else "",
+                      "adduct": item["pattern"].adduct.notation, "resolution": item["resolution"]}
+        if hasattr(r, "found") and r.found:
+            return pattern_datasets(r, self.calc["formula"], item["color"], fmt, provenance=provenance)
+        sx, sy = item["sticks"]
+        labels = [fmt.mz(m) if rel >= 5.0 else "" for m, rel in zip(sx, item["pattern"].relative)]
+        return [stick_dataset(item["name"], sx, sy, labels, item["color"], provenance=provenance)]
 
     def transfer_calculation(self):
         if self.calc is None:
             return
-        fmt = self.label_format()
-        colors = self._overlay_colors()
-        added = 0
-        for i, r in enumerate([r for r in self.calc["results"] if not isinstance(r, Exception)]):
-            color = colors[i % len(colors)]
-            notation = r.pattern.adduct.notation if hasattr(r, "found") else r.adduct.notation
-            provenance = {"plugin": "mass_spec", "formula": self.calc["formula"], "adduct": notation}
-            if hasattr(r, "found"):
-                if not r.found:
-                    continue
-                for ds in pattern_datasets(r, self.calc["formula"], color, fmt,
-                                           provenance=dict(provenance, resolution=r.resolution)):
-                    self._add(ds, "計算パターン")
-            else:
-                resolution = self.settings["resolution"] or DEFAULT_RESOLUTION
-                labels = [fmt.mz(m) if rel >= 5.0 else "" for m, rel in zip(r.mz, r.relative)]
-                ds = stick_dataset(f"{self.calc['formula']} {r.adduct.notation} 計算", r.mz, r.relative, labels,
-                                   color, provenance=dict(provenance, resolution=resolution))
-                self._add(ds, "計算パターン")
-            added += 1
-        if not added:
+        results = self._found_results() if self.spectrum is not None else [
+            r for r in self.calc["results"] if not isinstance(r, Exception)]
+        if not results:
             self.ctx.show_message("実測に見つかった付加イオンがないので、転送するものがありません。", "MS パック")
+            return
+        for r in results:
+            notation = r.pattern.adduct.notation if hasattr(r, "found") else r.adduct.notation
+            for ds in self._calc_datasets(self._pattern_item(notation)):
+                self._add(ds, "計算パターン")
+
+    def transfer_pane(self, pane):
+        item = pane.item
+        if item is None:
+            return
+        if item["kind"] == "measured":
+            self._transfer_measured(item, pane)
+        else:
+            for ds in self._calc_datasets(item):
+                self._add(ds, "計算パターン")
 
     # ================================================================ 右クリック
     def _tic_menu(self, pos):
@@ -779,29 +841,39 @@ class MassSpecPanel(QWidget):
 
     def _spectrum_menu(self, pos):
         menu = QMenu(self)
-        menu.addAction("表示中の範囲を転送", lambda: self.transfer_spectrum(view_only=True))
-        menu.addAction("全範囲を転送", lambda: self.transfer_spectrum(view_only=False))
+        copy_menu = menu.addMenu("3段目の枠にコピー")
+        copy_menu.addAction("空いている枠", self.copy_spectrum_to_pane)
+        for i in range(len(self.panes)):
+            copy_menu.addAction(f"枠 {i + 1}", lambda i=i: self.copy_spectrum_to_pane(i))
+        menu.addSeparator()
+        menu.addAction("表示中の範囲をプロットに転送", lambda: self.transfer_spectrum(view_only=True))
+        menu.addAction("全範囲をプロットに転送", lambda: self.transfer_spectrum(view_only=False))
         menu.addAction("centroid を転送", self.transfer_centroid)
         menu.addAction("ラベルだけを転送", lambda: self.transfer_centroid(labels_only=True))
         menu.addAction("計算パターンを転送", self.transfer_calculation)
         menu.addSeparator()
-        toggle = menu.addAction("ラベルを表示")
-        toggle.setCheckable(True)
-        toggle.setChecked(self.settings["label_mode"] != "none")
-        toggle.toggled.connect(self._toggle_labels)
-        menu.addAction("表示中のピーク一覧をコピー", self.copy_visible_peaks)
+        menu.addAction("表示中のピーク一覧をコピー", lambda: self.copy_visible_peaks(self.spectrum_plot))
         menu.addAction("全体を表示", self.spectrum_plot.reset_view)
         menu.exec(pos)
 
-    def _toggle_labels(self, on):
-        self.label_mode_combo.setCurrentIndex(0 if on else len(LABEL_MODES) - 1)
+    def _pane_menu(self, pane, pos):
+        menu = QMenu(self)
+        if pane.item is not None:
+            menu.addAction("プロットに転送", lambda: self.transfer_pane(pane))
+            if pane.item["kind"] == "measured":
+                menu.addAction("centroid を転送", lambda: self._transfer_peaks(pane.item, pane))
+            menu.addAction("表示中のピーク一覧をコピー", lambda: self.copy_visible_peaks(pane))
+            menu.addAction("枠を空にする", lambda: pane.show_item(None))
+            menu.addAction("全体を表示", pane.reset_view)
+        else:
+            menu.addAction("2段目のスペクトルをここにコピー",
+                           lambda: self.copy_spectrum_to_pane(self.panes.index(pane)))
+        menu.exec(pos)
 
-    def copy_visible_peaks(self):
-        if self.spectrum is None:
-            return
-        x0, x1 = self.spectrum_plot.ax.get_xlim()
+    def copy_visible_peaks(self, plot):
+        x0, x1 = plot.ax.get_xlim()
         fmt = self.label_format()
-        lines = ["m/z\t強度"] + [f"{fmt.mz(p.mz)}\t{p.height:.6g}" for p in self.spectrum["peaks"] if x0 <= p.mz <= x1]
+        lines = ["m/z\t強度"] + [f"{fmt.mz(p.mz)}\t{p.height:.6g}" for p in plot.peaks if x0 <= p.mz <= x1]
         QGuiApplication.clipboard().setText("\n".join(lines))
         self._status(f"ピーク {len(lines) - 1} 本をコピーしました")
 

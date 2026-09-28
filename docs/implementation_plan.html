@@ -136,9 +136,9 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px
   <header class="head">
     <div class="eyebrow">P-316 · graphica-plugin-mass-spec · Graphica プラグイン API 2.0</div>
     <h1>質量分析 (MS) パック 実装計画</h1>
-    <p>Bruker micrOTOF の測定(<code>.d</code>)を ProteoWizard の msconvert で自動的に mzML に変換して読み込み、TIC から時間範囲を選んだ平均スペクトルを作り、組成式から計算した同位体パターンを重ねて ppm 誤差を出すプラグインの計画です。仕様はユーザーと合意済みで、実データ(mzML)の中身だけが確認待ちです。</p>
+    <p>Bruker micrOTOF の測定(<code>.d</code>)を ProteoWizard の msconvert で自動的に mzML に変換して読み込み、TIC から時間範囲を選んだ平均スペクトルを作り、組成式から計算した同位体パターンを重ねて ppm 誤差を出すプラグインの計画です。仕様はユーザーと合意済みで、v1.0 の機能は実装済みです。実データでの測定結果は下の「実データで分かったこと」にあります。</p>
     <div class="facts">
-      <span><b>状態</b> 仕様確定・実装中</span>
+      <span><b>状態</b> 実装済み・実機での確認待ち(テスト 108 件)</span>
       <span><b>使うフック</b> <code>register_importer</code> <code>register_panel</code> <code>register_analyzer</code> <code>register_plot_type</code> <code>register_menu_action</code></span>
       <span><b>更新</b> 2026-09-28</span>
     </div>
@@ -310,18 +310,34 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px
     <h2>作業の順番</h2>
     <div class="steps">
       <div class="step"><span class="sid">S1</span><span class="st">リポジトリと開発環境</span><span class="chip c-done">完了</span><span class="sd">GitHub に作成、雛形(conftest / build_zip / CI)をコピー、仮想環境に graphica-plot 2.0 を導入。</span></div>
-      <div class="step"><span class="sid">S2</span><span class="st">組成式と同位体パターン(chemistry.py)</span><span class="chip c-prog">進行中</span><span class="sd">既知の化合物の質量・パターンと突き合わせる単体テスト(例: C6H12O6、Cl や Br を含む化合物の M+2)。</span></div>
-      <div class="step"><span class="sid">S3</span><span class="st">実データの確認</span><span class="chip c-wait">ProteoWizard 待ち</span><span class="sd">サンプル3件を変換し、profile か centroid か、スキャン数、1スキャンの点数、スキャン間で m/z の格子が同じか、圧縮を調べる。変換の推奨設定を決めて README に書く。</span></div>
-      <div class="step"><span class="sid">S4</span><span class="st">mzML の読み込み(mzml.py)</span><span class="chip c-todo">未着手</span><span class="sd">合成した mzML(32/64 bit、圧縮あり/なし、indexed あり/なし、正負)でテスト。実データで読み込み時間とメモリを測って note に残す。</span></div>
-      <div class="step"><span class="sid">S4b</span><span class="st">.d の自動変換(convert.py)</span><span class="chip c-todo">未着手</span><span class="sd">msconvert の検出・引数・キャッシュのキーを単体テスト。変換そのものは偽の msconvert(引数を記録して mzML を書くスクリプト)でテストし、本物はローカルでだけ確かめる。変換にかかる時間を測る。</span></div>
-      <div class="step"><span class="sid">S5</span><span class="st">平均・背景・centroid(spectra.py)</span><span class="chip c-todo">未着手</span><span class="sd">平均の方法は S3 の結果で決める(格子が共通なら単純平均、違えば共通の格子に寄せる)。</span></div>
-      <div class="step"><span class="sid">S6</span><span class="st">照合(matching.py)と analyzer</span><span class="chip c-todo">未着手</span><span class="sd">合成スペクトル(既知の組成式のパターン+ずれ+雑音)で ppm と相対強度を確かめる。</span></div>
-      <div class="step"><span class="sid">S7</span><span class="st">Stick の描画と importer</span><span class="chip c-todo">未着手</span><span class="sd">FakeGraphicaPluginAPI と load_plugin_like_graphica で配線を確認。</span></div>
-      <div class="step"><span class="sid">S8</span><span class="st">パネルとマウス操作</span><span class="chip c-todo">未着手</span><span class="sd">表のマウス操作を、matplotlib のイベントを合成して offscreen でテストする。</span></div>
-      <div class="step"><span class="sid">S9</span><span class="st">ラベル・桁数・転送</span><span class="chip c-todo">未着手</span><span class="sd">FakePluginContext で、追加されるデータセットの列・ラベル・名前・provenance を確認。</span></div>
-      <div class="step"><span class="sid">S10</span><span class="st">実機確認</span><span class="chip c-todo">未着手</span><span class="sd">zip を仮想環境の graphica と Releases の exe の両方に入れ、ユーザーのサンプルで操作。画面はユーザーにも確認してもらう。</span></div>
+      <div class="step"><span class="sid">S2</span><span class="st">組成式と同位体パターン(chemistry.py)</span><span class="chip c-done">完了</span><span class="sd">既知の化合物の質量・パターンと突き合わせる単体テスト(例: C6H12O6、Cl や Br を含む化合物の M+2)。</span></div>
+      <div class="step"><span class="sid">S3</span><span class="st">実データの確認</span><span class="chip c-done">完了</span><span class="sd">サンプル3件を変換し、profile か centroid か、スキャン数、1スキャンの点数、スキャン間で m/z の格子が同じか、圧縮を調べる。変換の推奨設定を決めて README に書く。</span></div>
+      <div class="step"><span class="sid">S4</span><span class="st">mzML の読み込み(mzml.py)</span><span class="chip c-done">完了</span><span class="sd">合成した mzML(32/64 bit、圧縮あり/なし、indexed あり/なし、正負)でテスト。実データで読み込み時間とメモリを測って note に残す。</span></div>
+      <div class="step"><span class="sid">S4b</span><span class="st">.d の自動変換(convert.py)</span><span class="chip c-done">完了</span><span class="sd">msconvert の検出・引数・キャッシュのキーを単体テスト。変換そのものは偽の msconvert(引数を記録して mzML を書くスクリプト)でテストし、本物はローカルでだけ確かめる。変換にかかる時間を測る。</span></div>
+      <div class="step"><span class="sid">S5</span><span class="st">平均・背景・centroid(spectra.py)</span><span class="chip c-done">完了</span><span class="sd">平均の方法は S3 の結果で決める(格子が共通なら単純平均、違えば共通の格子に寄せる)。</span></div>
+      <div class="step"><span class="sid">S6</span><span class="st">照合(matching.py)と analyzer</span><span class="chip c-done">完了</span><span class="sd">合成スペクトル(既知の組成式のパターン+ずれ+雑音)で ppm と相対強度を確かめる。</span></div>
+      <div class="step"><span class="sid">S7</span><span class="st">Stick の描画と importer</span><span class="chip c-done">完了</span><span class="sd">FakeGraphicaPluginAPI と load_plugin_like_graphica で配線を確認。</span></div>
+      <div class="step"><span class="sid">S8</span><span class="st">パネルとマウス操作</span><span class="chip c-done">完了</span><span class="sd">表のマウス操作を、matplotlib のイベントを合成して offscreen でテストする。</span></div>
+      <div class="step"><span class="sid">S9</span><span class="st">ラベル・桁数・転送</span><span class="chip c-done">完了</span><span class="sd">FakePluginContext で、追加されるデータセットの列・ラベル・名前・provenance を確認。</span></div>
+      <div class="step"><span class="sid">S10</span><span class="st">実機確認</span><span class="chip c-prog">ユーザーの確認待ち</span><span class="sd">zip を仮想環境の graphica と Releases の exe の両方に入れ、ユーザーのサンプルで操作。画面はユーザーにも確認してもらう。</span></div>
       <div class="step"><span class="sid">S11</span><span class="st">リリースとハブの更新</span><span class="chip c-todo">未着手</span><span class="sd">v1.0.0 のタグと Release に zip、ハブの db と本体の PLUGIN_DEVELOPMENT_PROGRESS.md に1行。</span></div>
     </div>
+  </section>
+
+  <section>
+    <h2>実データで分かったこと</h2>
+    <p>ユーザーの micrOTOF の測定3件(APCI 正1件・負2件)を msconvert で変換して調べました。</p>
+    <div class="tbl"><table>
+      <thead><tr><th>項目</th><th>結果</th><th>設計への反映</th></tr></thead>
+      <tbody>
+        <tr><td class="k">変換</td><td>1件 5〜6 秒、mzML は 26〜94 MB</td><td><code>QProcess</code> で別プロセス、結果をキャッシュ</td></tr>
+        <tr><td class="k">形式</td><td>profile だけ。20〜77 スキャン(約 1 秒ごと)、1スキャン常に 150,912 点、0 が 47〜99.7%。m/z 64 bit・強度 32 bit・zlib</td><td>送るときは 0 の区間を形を変えずに詰める(点数が 1/7 になった例もある)</td></tr>
+        <tr><td class="k">格子</td><td>点の間隔は約 20 ppm。スキャン間のずれは最大 0.36 ppm</td><td>点の番号ごとに平均(ずれが 2 ppm を超えるときだけ補間)</td></tr>
+        <tr><td class="k">分解能</td><td>負イオン 1.1〜1.7 万、正イオンの弱いピーク 約 6 千。半値全幅に 2〜6 点</td><td>R は実測から推定、頂点はガウスの3点補間</td></tr>
+        <tr><td class="k">TIC</td><td>装置の値と profile の総和が違う</td><td>表示は装置の値</td></tr>
+        <tr><td class="k">時間</td><td>パネルで開いて全スキャンを平均しピークを拾うまで 0.3〜1.1 秒(最初は 12 秒かかったファイルがあり、半値幅の探索に上限を付けて解消)</td><td>GUI スレッドのままでよい</td></tr>
+      </tbody>
+    </table></div>
   </section>
 
   <section>

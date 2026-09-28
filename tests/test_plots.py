@@ -93,6 +93,47 @@ def test_wheel_zoom_pan_back_and_reset(tic):
     assert tic.ax.get_xlim() == pytest.approx(home)
 
 
+def _axis_px(plot, x, below=12):
+    """横軸の目盛りの帯(グラフの枠のすぐ下)の画面座標。"""
+    px = plot.ax.transData.transform((x, plot.ax.get_ylim()[0]))[0]
+    return px, plot.ax.bbox.y0 - below
+
+
+def test_wheel_on_the_x_axis_zooms_and_drag_on_it_pans(tic):
+    home = tic.ax.get_xlim()
+    px, py = _axis_px(tic, 0.5)
+    MouseEvent("scroll_event", tic, px, py, button="up", step=1)._process()
+    zoomed = tic.ax.get_xlim()
+    assert zoomed[1] - zoomed[0] < home[1] - home[0]
+    assert (zoomed[0] + zoomed[1]) / 2 == pytest.approx(0.5, abs=0.05)
+    ylim = tic.ax.get_ylim()
+    start, _ = _axis_px(tic, 0.5)
+    end, _ = _axis_px(tic, 0.4)
+    MouseEvent("button_press_event", tic, start, py, button=MouseButton.LEFT)._process()
+    MouseEvent("motion_notify_event", tic, end, py, button=MouseButton.LEFT)._process()
+    MouseEvent("button_release_event", tic, end, py, button=MouseButton.LEFT)._process()
+    panned = tic.ax.get_xlim()
+    assert panned[0] == pytest.approx(zoomed[0] + 0.1, abs=0.01)
+    assert tic.ax.get_ylim() == pytest.approx(ylim)
+    assert tic.ranges["sample"] is None  # 軸の上のドラッグは範囲を選ばない
+
+
+def test_wheel_on_the_y_axis_zooms_vertically(tic):
+    ylim = tic.ax.get_ylim()
+    bbox = tic.ax.bbox
+    MouseEvent("scroll_event", tic, bbox.x0 - 12, (bbox.y0 + bbox.y1) / 2, button="up", step=1)._process()
+    assert tic.ax.get_ylim()[1] < ylim[1] and tic.ax.get_ylim()[0] == ylim[0]
+
+
+def test_cursor_changes_over_the_axes(tic):
+    from PySide6.QtCore import Qt
+    px, py = _axis_px(tic, 0.5)
+    MouseEvent("motion_notify_event", tic, px, py)._process()
+    assert tic.cursor().shape() == Qt.CursorShape.SizeHorCursor
+    MouseEvent("motion_notify_event", tic, *_px(tic, 0.5))._process()
+    assert tic.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
 @pytest.fixture
 def spectrum():
     plot = SpectrumPlot()
