@@ -476,3 +476,7 @@ def test_transferred_centroid_labels_only_signal_heads(panel, ctx, tmp_path):
     panel.transfer_centroid()
     labels = [t for t in ctx.datasets()[-1].df["ラベル"] if t]
     assert [t[:5] for t in labels] == ["450.0", "500.0"]
+
+
+def test_menu_bar_stays_inside_the_viewer_window(panel):
+    assert not panel.menu_bar.isNativeMenuBar()

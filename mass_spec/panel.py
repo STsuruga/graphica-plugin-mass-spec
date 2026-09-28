@@ -224,6 +224,8 @@ class MassSpecPanel(QWidget):
         outer.setContentsMargins(4, 0, 4, 4)
         outer.setSpacing(4)
         self.menu_bar = QMenuBar(self.content)
+        # macOS では画面上部の共通のメニューバーに移って本体のメニューとぶつかるので、ウィンドウの中に出す
+        self.menu_bar.setNativeMenuBar(False)
         outer.setMenuBar(self.menu_bar)
         self._build_menus()
 
