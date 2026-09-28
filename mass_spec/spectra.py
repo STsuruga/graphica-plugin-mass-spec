@@ -6,6 +6,9 @@ import numpy as np
 # 点の番号ごとに平均してよい、スキャン間の m/z の格子のずれの上限(ppm)。
 # micrOTOF の実測では 0.4 ppm 以下で、点の間隔(約 20 ppm)より十分小さい。
 GRID_TOLERANCE_PPM = 2.0
+# 半値を探す片側の点数の上限。micrOTOF の profile では半値全幅は 2〜6 点。上限が無いと、
+# 持ち上がったベースライン上の極大ごとに数万点を歩いて、読み込みが 10 秒を超えた。
+FWHM_SEARCH_POINTS = 100
 
 
 def average_spectrum(scans):
@@ -93,13 +96,14 @@ def _apex(mz, y, i):
     return float(mz[i]), float(y[i])
 
 
-def _fwhm(mz, y, i, height):
+def _fwhm(mz, y, i, height, max_points=FWHM_SEARCH_POINTS):
+    """半値全幅。半値まで下がらないピーク(持ち上がったベースライン上など)は nan。"""
     half = height / 2.0
     lo = i
-    while lo > 0 and y[lo] > half:
+    while lo > 0 and y[lo] > half and i - lo < max_points:
         lo -= 1
     hi = i
-    while hi < len(y) - 1 and y[hi] > half:
+    while hi < len(y) - 1 and y[hi] > half and hi - i < max_points:
         hi += 1
     if y[lo] > half or y[hi] > half:
         return float("nan")
