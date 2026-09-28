@@ -65,6 +65,13 @@ def mzml(tmp_path):
     return write_mzml(tmp_path / "sample.mzML", run_scans(n=10))
 
 
+def _open_all(panel, path):
+    """開いてから全範囲を試料にする(開いた直後は範囲なし)。"""
+    run = panel.open_mzml(path)
+    panel.reset_sample_range()
+    return run
+
+
 def _calculate(panel, formula="C6H12O6", preset=0, extra=""):
     w = panel.calc_window
     w.formula_edit.setText(formula)
@@ -80,9 +87,12 @@ def test_menu_bar_and_toolbar(panel):
     assert panel.splitter.count() == 3
 
 
-def test_open_shows_tic_and_the_average_of_all_scans(panel, mzml):
+def test_open_shows_the_tic_and_no_spectrum_until_a_range_is_chosen(panel, mzml):
     run = panel.open_mzml(mzml)
     assert run is not None and panel.run_list.count() == 1
+    assert panel.spectrum is None and panel.tic_plot.ranges["sample"] is None
+    assert "ドラッグ" in panel.spectrum_header.plain
+    panel.reset_sample_range()
     assert panel.run_list.currentItem().text() == "sample" and "10 スキャン" in panel.run_list.currentItem().toolTip()
     assert panel.range_window.sample_from.value() == pytest.approx(0.0)
     assert panel.range_window.sample_to.value() == pytest.approx(9 / 60, abs=1e-3)
@@ -90,7 +100,7 @@ def test_open_shows_tic_and_the_average_of_all_scans(panel, mzml):
 
 
 def test_sample_and_background_ranges_subtract(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
     with_bg_peak = panel.spectrum["y"].max()
     panel._on_tic_range_changed("background", 0.0, 2 / 60)
@@ -105,14 +115,14 @@ def test_sample_and_background_ranges_subtract(panel, mzml):
 
 
 def test_clicking_a_scan_selects_that_scan(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel._on_scan_clicked(4.2 / 60)
     assert panel.spectrum["provenance"]["scans"] == 1
     assert panel.range_window.sample_from.value() == pytest.approx(4 / 60, abs=1e-3)
 
 
 def test_calculation_window_matches_and_overlays(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
     _calculate(panel)
     header, rows = panel.calc_rows()
@@ -141,7 +151,7 @@ def test_formula_errors_are_reported(panel, ctx):
 
 
 def test_spectrum_copies_into_panes(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel.copy_spectrum_to_pane()
     panel._on_scan_clicked(4 / 60)
     panel.copy_spectrum_to_pane()
@@ -154,7 +164,7 @@ def test_spectrum_copies_into_panes(panel, mzml):
 
 
 def test_found_patterns_fill_panes_and_one_item_per_pane(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
     _calculate(panel, extra="[M+H]+")
     panel.found_patterns_to_panes()
@@ -168,7 +178,7 @@ def test_found_patterns_fill_panes_and_one_item_per_pane(panel, mzml):
 
 
 def test_pane_count_spin(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel.copy_spectrum_to_pane(0)
     panel.pane_spin.setValue(5)
     assert panel.pane_count() == 5 and panel.calc_window.pane_combo.count() == 5
@@ -178,7 +188,7 @@ def test_pane_count_spin(panel, mzml):
 
 
 def test_sync_mode_links_only_the_panes(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel.copy_spectrum_to_pane(0)
     panel.copy_spectrum_to_pane(1)
     panel.panes[0].set_view((200.0, 250.0))
@@ -192,7 +202,7 @@ def test_sync_mode_links_only_the_panes(panel, mzml):
 
 
 def test_a_new_pane_item_follows_the_synced_range(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel.copy_spectrum_to_pane(0)
     panel.panes[0].set_view((200.0, 250.0))
     panel.copy_spectrum_to_pane(1)
@@ -200,7 +210,7 @@ def test_a_new_pane_item_follows_the_synced_range(panel, mzml):
 
 
 def test_transfers_add_datasets_with_labels_colors_and_subplot(panel, mzml, ctx):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
     panel.settings_window.subplot_spin.setValue(2)
     panel.settings_window.mz_decimals_spin.setValue(2)
@@ -225,7 +235,7 @@ def test_transfers_add_datasets_with_labels_colors_and_subplot(panel, mzml, ctx)
 
 
 def test_pane_contents_can_be_transferred(panel, mzml, ctx):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
     panel.copy_spectrum_to_pane(0)
     _calculate(panel)
@@ -240,7 +250,7 @@ def test_pane_contents_can_be_transferred(panel, mzml, ctx):
 
 
 def test_view_only_transfer_crops_the_spectrum(panel, mzml, ctx):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     panel.spectrum_plot.set_view((200.0, 250.0), (0, 100))
     panel.settings_window.view_only_check.setChecked(True)
     panel.transfer_spectrum()
@@ -344,7 +354,7 @@ def test_register_adds_panel_and_help(tmp_path):
 
 
 def test_range_fields_live_in_the_detail_window(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     w = panel.range_window
     assert not w.isVisible() and w.parent() is panel
     w.sample_from.setValue(3 / 60)
@@ -365,11 +375,12 @@ def test_run_list_checks_toggle_tics_and_click_focuses(panel, tmp_path):
     assert first.color != second.color and first.color.startswith("#")
     assert len(panel.tic_plot.lines) == 2
     assert panel.tic_header.plain == "クロマトグラム - neg: TIC −"
-    assert panel.spectrum_header.plain.startswith("スペクトル - neg ")
+    assert "ドラッグ" in panel.spectrum_header.plain
     panel.run_list.item(0).setCheckState(Qt.CheckState.Unchecked)
     assert len(panel.tic_plot.lines) == 1
     panel.run_list.setCurrentRow(0)
     assert panel.current_run() is first
+    panel.reset_sample_range()
     assert panel.spectrum["run"] is first and panel.spectrum["provenance"]["scans"] == 10
     assert panel.tic_header.plain == "クロマトグラム - pos: TIC +"
     assert panel.pane_header.plain == "比較スペクトル"
@@ -380,7 +391,7 @@ def test_run_list_checks_toggle_tics_and_click_focuses(panel, tmp_path):
 
 
 def test_viewer_lives_in_its_own_window(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     assert panel.content.window() is panel.window_ and panel.window_.isWindow()
     panel.open_window()
     assert panel.window_.isVisible()
@@ -392,7 +403,7 @@ def test_viewer_lives_in_its_own_window(panel, mzml):
     assert not any("ドック" in m for m in menus)
 
 def test_title_labels_show_name_and_detail(panel, mzml):
-    panel.open_mzml(mzml)
+    _open_all(panel, mzml)
     assert panel.tic_header.plain == "クロマトグラム - sample: TIC +"
     assert "●" in panel.tic_header.text()
     assert panel.spectrum_header.plain.startswith("スペクトル - sample ")

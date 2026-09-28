@@ -157,7 +157,7 @@ class RangeWindow(QWidget):
             row.addStretch(1)
             form.addRow(label, row)
         row = QHBoxLayout()
-        full = QPushButton("試料を全範囲に戻す")
+        full = QPushButton("試料を全範囲にする")
         full.clicked.connect(viewer.reset_sample_range)
         clear = QPushButton("背景を解除")
         clear.clicked.connect(viewer.clear_background)

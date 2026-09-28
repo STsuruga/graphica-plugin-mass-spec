@@ -689,7 +689,7 @@ class MassSpecPanel(QWidget):
         if run is None:
             return
         # 開いた直後は全範囲を試料にし、背景はなし。同じ測定に戻ったときは前の範囲を使う
-        self.ranges.setdefault(run.path, {"sample": self._full_range(run), "background": None})
+        self.ranges.setdefault(run.path, {"sample": None, "background": None})
         self.redraw_tics(keep_view=len(self.runs) > 1)
         self.compute_spectrum(keep_view=False)
 
@@ -709,12 +709,12 @@ class MassSpecPanel(QWidget):
     def _show_ranges(self, ranges):
         self._updating = True
         try:
-            for (lo, hi), kind in ((ranges["sample"], "sample"), (ranges["background"] or (0.0, 0.0), "background")):
+            for (lo, hi), kind in ((ranges["sample"] or (0.0, 0.0), "sample"), (ranges["background"] or (0.0, 0.0), "background")):
                 w = self.range_window
                 boxes = (w.sample_from, w.sample_to) if kind == "sample" else (w.bg_from, w.bg_to)
                 boxes[0].setValue(lo)
                 boxes[1].setValue(hi)
-            self.tic_plot.set_range("sample", *ranges["sample"])
+            self.tic_plot.set_range("sample", *(ranges["sample"] or (None, None)))
             bg = ranges["background"]
             self.tic_plot.set_range("background", *(bg if bg else (None, None)))
         finally:
@@ -754,10 +754,12 @@ class MassSpecPanel(QWidget):
         if run is None:
             return
         ranges = self.ranges[run.path]
-        ranges["sample"] = (self.range_window.sample_from.value(), self.range_window.sample_to.value())
+        sample = (self.range_window.sample_from.value(), self.range_window.sample_to.value())
+        # 終わりが始まりより前か、どちらも 0 なら「選んでいない」(1スキャンだけなら始まりと終わりが同じ)
+        ranges["sample"] = None if sample[1] < sample[0] or sample == (0.0, 0.0) else sample
         bg = (self.range_window.bg_from.value(), self.range_window.bg_to.value())
         ranges["background"] = bg if bg[1] > bg[0] else None
-        self.tic_plot.set_range("sample", *ranges["sample"])
+        self.tic_plot.set_range("sample", *(ranges["sample"] or (None, None)))
         self.tic_plot.set_range("background", *(ranges["background"] or (None, None)))
         self._recompute_timer.start(RECOMPUTE_DELAY_MS)
 
@@ -776,6 +778,12 @@ class MassSpecPanel(QWidget):
         if run is None:
             return
         ranges = self.ranges[run.path]
+        if ranges["sample"] is None:
+            # 開いた直後は範囲を選んでいない。TIC をドラッグかクリックすると2段目に出る
+            self.spectrum = None
+            self.spectrum_plot.clear()
+            self.spectrum_header.set_title("スペクトル", "TIC をドラッグして範囲を選んでください")
+            return
         scans = run.scans_in_range(*ranges["sample"])
         if not scans:
             self.spectrum = None
