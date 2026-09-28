@@ -231,6 +231,13 @@ class SettingsWindow(QWidget):
         form.addRow("centroid に入れる下限 (%)", self.centroid_min_spin)
         layout.addWidget(group)
 
+        group = QGroupBox("ビューア")
+        form = QFormLayout(group)
+        self.open_as_window_check = QCheckBox("パネルを表示したら別ウィンドウで開く")
+        self.open_as_window_check.setChecked(s["open_as_window"])
+        form.addRow(self.open_as_window_check)
+        layout.addWidget(group)
+
         group = QGroupBox("msconvert(ProteoWizard)")
         form = QFormLayout(group)
         self.msconvert_label = QLabel(s["msconvert_path"] or "自動で探す")
@@ -253,7 +260,7 @@ class SettingsWindow(QWidget):
         for w in (self.label_n_spin, self.label_percent_spin, self.mz_decimals_spin, self.ppm_decimals_spin,
                   self.subplot_spin, self.centroid_min_spin):
             w.valueChanged.connect(self._changed)
-        for w in (self.subtract_check, self.clip_check, self.view_only_check):
+        for w in (self.subtract_check, self.clip_check, self.view_only_check, self.open_as_window_check):
             w.toggled.connect(self._changed)
         self._update_visibility()
 
@@ -276,6 +283,7 @@ class SettingsWindow(QWidget):
             transfer_view_only=self.view_only_check.isChecked(),
             subplot_target=self.subplot_spin.value() - 1,
             centroid_min_percent=self.centroid_min_spin.value(),
+            open_as_window=self.open_as_window_check.isChecked(),
         )
 
     def _choose_msconvert(self):

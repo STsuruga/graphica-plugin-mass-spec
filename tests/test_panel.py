@@ -397,3 +397,37 @@ def test_title_labels_show_name_and_detail(panel, mzml):
     assert panel.tic_header.plain == "クロマトグラム - sample: TIC +"
     assert "●" in panel.tic_header.text()
     assert panel.spectrum_header.plain.startswith("スペクトル - sample ")
+
+
+def test_open_menu_opens_this_tabs_viewer_as_a_window(tmp_path):
+    from graphica.plugin.testing import FakeGraphicaPluginAPI
+
+    from mass_spec import OPEN_MENU, PANEL_NAME, register
+    api = FakeGraphicaPluginAPI(plugin_name="mass_spec")
+    register(api)
+    open_action = next(a for a in api.menu_actions if a.text == OPEN_MENU)
+    lonely = FakePluginContext(plugin_name="mass_spec", data_dir=str(tmp_path / "a"))
+    open_action.callback(lonely)
+    assert lonely.messages[-1][0] == "error"
+    ctx = FakePluginContext(plugin_name="mass_spec", data_dir=str(tmp_path / "b"))
+    other_ctx = FakePluginContext(plugin_name="mass_spec", data_dir=str(tmp_path / "c"))
+    viewer = api.panels[PANEL_NAME]["widget_factory"](ctx)
+    other = api.panels[PANEL_NAME]["widget_factory"](other_ctx)
+    open_action.callback(ctx)
+    assert viewer.popout is not None and viewer.popout.isVisible()
+    assert other.popout is None
+    viewer.close()
+    other.close()
+
+
+@pytest.mark.parametrize("open_as_window", [True, False])
+def test_showing_the_panel_pops_out_by_default(ctx, open_as_window):
+    from mass_spec.panel import MassSpecPanel
+    from mass_spec.settings import DEFAULTS, save_settings
+    save_settings(ctx.data_dir, dict(DEFAULTS, open_as_window=open_as_window))
+    viewer = MassSpecPanel(ctx)
+    viewer.show()
+    for _ in range(5):
+        QApplication.processEvents()
+    assert (viewer.popout is not None) == open_as_window
+    viewer.close()

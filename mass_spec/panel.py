@@ -7,6 +7,7 @@ TIC(1段目)、選んだ時間範囲のスペクトル(2段目)、実測のコ�
 import html
 import os
 import time
+import weakref
 
 import numpy as np
 from matplotlib import colormaps
@@ -49,8 +50,8 @@ class TitleLabel(QLabel):
     def __init__(self, title):
         super().__init__()
         self.setTextFormat(Qt.TextFormat.RichText)
-        self.setStyleSheet("QLabel { padding: 6px 2px 4px 2px; border: none;"
-                           " border-bottom: 1px solid palette(mid); }")
+        self.setStyleSheet("QLabel { font-size: 11px; padding: 5px 2px 3px 2px; border: none;"
+                           " border-bottom: 1px solid palette(midlight); }")
         self.set_title(title)
 
     def set_title(self, title, detail="", dot_color=None):
@@ -58,7 +59,7 @@ class TitleLabel(QLabel):
         muted = self.palette().color(QPalette.ColorRole.PlaceholderText).name()
         dot = f'<span style="color:{dot_color}">●</span>&nbsp;' if dot_color else ""
         rest = f'&nbsp;&nbsp;<span style="color:{muted}">{html.escape(detail)}</span>' if detail else ""
-        self.setText(f'{dot}<span style="font-weight:600">{html.escape(title)}</span>{rest}')
+        self.setText(f'{dot}<span style="font-weight:500">{html.escape(title)}</span>{rest}')
 
 
 class PopoutWindow(QWidget):
@@ -81,6 +82,14 @@ def _color_icon(color):
     pixmap = QPixmap(12, 12)
     pixmap.fill(QColor(color))
     return QIcon(pixmap)
+
+
+# 開いているビューア。メニューの項目から同じタブのビューアを探すのに使う(本体の ctx はタブ×プラグインごとに1つ)
+_VIEWERS = weakref.WeakSet()
+
+
+def viewer_for(ctx):
+    return next((v for v in list(_VIEWERS) if v.ctx is ctx), None)
 
 
 MSCONVERT_MISSING = (
@@ -135,6 +144,13 @@ class MassSpecPanel(QWidget):
         self.range_window = RangeWindow(self)
         self._apply_label_settings()
         self.set_pane_count(self.settings["pane_count"])
+        _VIEWERS.add(self)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # ドックは小さくて見づらいので、既定ではドックを表示したら別ウィンドウに移す
+        if self.settings["open_as_window"] and self.popout is None:
+            QTimer.singleShot(0, self.pop_out)
 
     # ================================================================ 画面
     def _build(self):
@@ -307,7 +323,13 @@ class MassSpecPanel(QWidget):
         self.placeholder.show()
         self.popout_action.setEnabled(False)
         self.dock_back_action.setEnabled(True)
-        self.popout.resize(max(self.content.width(), 1200), max(self.content.height(), 800))
+        screen = self.screen().availableGeometry() if self.screen() else None
+        if screen is not None:
+            width, height = int(screen.width() * 0.85), int(screen.height() * 0.85)
+            self.popout.setGeometry(screen.x() + (screen.width() - width) // 2,
+                                    screen.y() + (screen.height() - height) // 2, width, height)
+        else:
+            self.popout.resize(1280, 860)
         self._open_window(self.popout)
 
     def dock_back(self):
