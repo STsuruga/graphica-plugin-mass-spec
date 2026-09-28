@@ -91,7 +91,7 @@ def test_open_shows_the_tic_and_no_spectrum_until_a_range_is_chosen(panel, mzml)
     run = panel.open_mzml(mzml)
     assert run is not None and panel.run_list.count() == 1
     assert panel.spectrum is None and panel.tic_plot.ranges["sample"] is None
-    assert "ドラッグ" in panel.spectrum_header.plain
+    assert panel.spectrum_header.plain == "スペクトル"
     panel.reset_sample_range()
     assert panel.run_list.currentItem().text() == "sample" and "10 スキャン" in panel.run_list.currentItem().toolTip()
     assert panel.range_window.sample_from.value() == pytest.approx(0.0)
@@ -269,7 +269,7 @@ def test_settings_persist_between_panels(ctx, mzml):
     first.close()
     second = MassSpecPanel(ctx)
     assert second.settings_window.mz_decimals_spin.value() == 3
-    assert second.settings["label_mode"] == "percent"
+    assert second.settings["label_mode"] == "none" and second.spectrum_plot.label_mode == "none"
     assert second.spectrum_plot.label_format.mz_decimals == 3
     assert second.panes[0].label_format.mz_decimals == 3
     assert second.settings_window.view_only_check.isChecked()
@@ -375,7 +375,7 @@ def test_run_list_checks_toggle_tics_and_click_focuses(panel, tmp_path):
     assert first.color != second.color and first.color.startswith("#")
     assert len(panel.tic_plot.lines) == 2
     assert panel.tic_header.plain == "クロマトグラム - neg: TIC −"
-    assert "ドラッグ" in panel.spectrum_header.plain
+    assert panel.spectrum_header.plain == "スペクトル"
     panel.run_list.item(0).setCheckState(Qt.CheckState.Unchecked)
     assert len(panel.tic_plot.lines) == 1
     panel.run_list.setCurrentRow(0)
@@ -446,3 +446,13 @@ def test_showing_the_panel_hides_the_dock_and_opens_the_window(ctx):
     assert viewer.window_.isVisible()
     viewer.close()
     main.close()
+
+
+def test_old_label_mode_setting_falls_back_to_percent(ctx):
+    import json
+    os.makedirs(ctx.data_dir, exist_ok=True)
+    with open(os.path.join(ctx.data_dir, "settings.json"), "w", encoding="utf-8") as f:
+        json.dump({"label_mode": "top", "label_top_n": 10}, f)
+    from mass_spec.settings import load_settings
+    settings = load_settings(ctx.data_dir)
+    assert settings["label_mode"] == "percent" and settings["label_percent"] == 20.0

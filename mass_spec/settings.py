@@ -9,9 +9,8 @@ FILE_NAME = "settings.json"
 
 DEFAULTS = {
     "msconvert_path": "",
-    "label_mode": "top",            # "top" / "percent" / "none"
-    "label_top_n": 10,
-    "label_percent": 5.0,
+    "label_mode": "percent",        # "percent"(表示範囲の最大に対する % 以上)/ "none"
+    "label_percent": 20.0,
     "mz_decimals": 4,
     "intensity": "none",            # "none" / "relative" / "absolute"
     "ppm_decimals": 1,
@@ -52,6 +51,8 @@ def load_settings(data_dir):
         else:
             ok = isinstance(value, type(default))
         settings[key] = value if ok else default
+    if settings["label_mode"] not in ("percent", "none"):
+        settings["label_mode"] = "percent"
     return settings
 
 

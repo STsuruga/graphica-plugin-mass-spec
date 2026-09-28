@@ -419,9 +419,8 @@ class SpectrumPlot(InteractivePlot):
         self.y = np.zeros(0)
         self.peaks = []
         self.pinned = []
-        self.label_mode = "top"        # "top" / "percent" / "none"
-        self.label_top_n = 10
-        self.label_percent = 5.0
+        self.label_mode = "percent"    # "percent" / "none"
+        self.label_percent = 20.0      # 表示範囲でいちばん強いピークに対する %
         self.label_format = LabelFormat()
         self.auto_y = True
         self._overlays = []
@@ -505,8 +504,7 @@ class SpectrumPlot(InteractivePlot):
             x0, x1 = self.ax.get_xlim()
             chosen = select_label_peaks(
                 self.peaks, (x0, x1),
-                top_n=self.label_top_n if self.label_mode == "top" else None,
-                min_relative=self.label_percent if self.label_mode == "percent" else None,
+                top_n=None, min_relative=self.label_percent,
                 pinned=[m for m in self.pinned if x0 <= m <= x1])
             visible = [p.height for p in self.peaks if x0 <= p.mz <= x1]
             base = max(visible) if visible else None

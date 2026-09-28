@@ -62,7 +62,7 @@ def stick_dataset(name, mz, heights, labels, color, source_file=None, provenance
                     linewidth=0.0 if labels_only else 1.5)
 
 
-def centroid_dataset(name, peaks, color, fmt=None, label_top_n=10, label_min_relative=None,
+def centroid_dataset(name, peaks, color, fmt=None, label_top_n=None, label_min_relative=20.0,
                      min_relative=1.0, source_file=None, provenance=None, labels_only=False, pinned=()):
     """ピークの一覧を Stick にする。min_relative(最大に対する %)未満は省き、多すぎれば強い順に上限まで。"""
     fmt = fmt or LabelFormat()

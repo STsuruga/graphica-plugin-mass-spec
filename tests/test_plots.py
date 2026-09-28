@@ -147,7 +147,7 @@ def spectrum():
 
 
 def test_spectrum_labels_follow_the_view(spectrum):
-    spectrum.label_top_n = 2
+    spectrum.label_percent = 40.0  # 表示範囲の最大(100)の 40% 以上: 450 と 500
     spectrum.update_labels()
     assert spectrum.labeled_texts() == ["450.0000", "500.0000"]
     _drag(spectrum, 540.0, 560.0, y0=10.0)
@@ -163,7 +163,7 @@ def test_spectrum_box_zoom_and_click_to_pin(spectrum):
     _drag(spectrum, 440.0, 520.0, key="control", y0=5.0, y1=80.0)
     assert spectrum.ax.get_ylim() == pytest.approx((5.0, 80.0), abs=1.0)
     spectrum.reset_view()
-    spectrum.label_top_n = 1
+    spectrum.label_percent = 90.0
     spectrum.update_labels()
     _mouse(spectrum, "button_press_event", 550.0, 3.0)
     _mouse(spectrum, "button_release_event", 550.0, 3.0)
@@ -207,3 +207,12 @@ def test_y_axis_uses_superscript_powers_from_1e4():
     plot.set_spectrum(grid, gaussian_peaks(grid, [500.0], [5000.0], 12000), [])
     plot.draw()
     assert plot.ax.yaxis.get_offset_text().get_text() == ""
+
+
+def test_labels_use_the_share_of_the_strongest_peak_in_view(spectrum):
+    spectrum.label_percent = 20.0
+    spectrum.update_labels()
+    assert [t[:5] for t in spectrum.labeled_texts()] == ["450.0", "451.0", "500.0"]   # 5% の 550 は付かない
+    spectrum.label_mode = "none"
+    spectrum.update_labels()
+    assert spectrum.labeled_texts() == []

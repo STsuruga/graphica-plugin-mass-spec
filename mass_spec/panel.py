@@ -390,7 +390,7 @@ class MassSpecPanel(QWidget):
     def _apply_label_settings(self):
         for plot in [self.spectrum_plot, *self.panes]:
             plot.label_mode = self.settings["label_mode"]
-            plot.label_top_n = self.settings["label_top_n"]
+
             plot.label_percent = self.settings["label_percent"]
             plot.label_format = self.label_format()
 
@@ -782,7 +782,7 @@ class MassSpecPanel(QWidget):
             # 開いた直後は範囲を選んでいない。TIC をドラッグかクリックすると2段目に出る
             self.spectrum = None
             self.spectrum_plot.clear()
-            self.spectrum_header.set_title("スペクトル", "TIC をドラッグして範囲を選んでください")
+            self.spectrum_header.set_title("スペクトル")
             return
         scans = run.scans_in_range(*ranges["sample"])
         if not scans:
@@ -1009,7 +1009,7 @@ class MassSpecPanel(QWidget):
         ds = centroid_dataset(
             source["name"] + (" ラベル" if labels_only else " centroid"), peaks, self._next_color(),
             self.label_format(),
-            label_top_n=self.settings["label_top_n"] if mode == "top" else (None if mode == "percent" else 0),
+            label_top_n=None if mode == "percent" else 0,
             label_min_relative=self.settings["label_percent"] if mode == "percent" else None,
             min_relative=self.settings["centroid_min_percent"], source_file=source["run"].path,
             provenance=dict(source["provenance"], kind="centroid"), labels_only=labels_only, pinned=plot.pinned)

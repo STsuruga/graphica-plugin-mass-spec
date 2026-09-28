@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 from .analyzer import PRESET_NEGATIVE, PRESET_NONE, PRESET_POSITIVE
 
 PRESETS = [PRESET_POSITIVE, PRESET_NEGATIVE, PRESET_NONE]
-LABEL_MODES = [("top", "強い順に N 本"), ("percent", "相対強度 % 以上"), ("none", "表示しない")]
+LABEL_MODES = [("percent", "表示範囲の最大に対する % 以上"), ("none", "表示しない")]
 INTENSITY_MODES = [("none", "なし"), ("relative", "相対 %"), ("absolute", "絶対値")]
 
 
@@ -187,12 +187,9 @@ class SettingsWindow(QWidget):
             self.label_mode_combo.addItem(text)
         self.label_mode_combo.setCurrentIndex([k for k, _ in LABEL_MODES].index(s["label_mode"]))
         form.addRow("付け方", self.label_mode_combo)
-        self.label_n_spin = QSpinBox()
-        self.label_n_spin.setRange(1, 200)
-        self.label_n_spin.setValue(s["label_top_n"])
-        form.addRow("本数", self.label_n_spin)
-        self.label_percent_spin = spin(0.0, 100.0, s["label_percent"], decimals=1, step=1.0)
-        form.addRow("相対強度の下限 (%)", self.label_percent_spin)
+        self.label_percent_spin = spin(0.0, 100.0, s["label_percent"], decimals=1, step=5.0)
+        self.label_percent_spin.setSuffix(" %")
+        form.addRow("相対強度の下限", self.label_percent_spin)
         self.mz_decimals_spin = QSpinBox()
         self.mz_decimals_spin.setRange(0, 6)
         self.mz_decimals_spin.setValue(s["mz_decimals"])
@@ -251,7 +248,7 @@ class SettingsWindow(QWidget):
 
         for w in (self.label_mode_combo, self.intensity_combo):
             w.currentIndexChanged.connect(self._changed)
-        for w in (self.label_n_spin, self.label_percent_spin, self.mz_decimals_spin, self.ppm_decimals_spin,
+        for w in (self.label_percent_spin, self.mz_decimals_spin, self.ppm_decimals_spin,
                   self.subplot_spin, self.centroid_min_spin):
             w.valueChanged.connect(self._changed)
         for w in (self.subtract_check, self.clip_check, self.view_only_check):
@@ -260,14 +257,13 @@ class SettingsWindow(QWidget):
 
     def _update_visibility(self):
         mode = LABEL_MODES[self.label_mode_combo.currentIndex()][0]
-        self.label_n_spin.setEnabled(mode == "top")
         self.label_percent_spin.setEnabled(mode == "percent")
 
     def _changed(self, *_):
         self._update_visibility()
         self.viewer.apply_settings(
             label_mode=LABEL_MODES[self.label_mode_combo.currentIndex()][0],
-            label_top_n=self.label_n_spin.value(),
+
             label_percent=self.label_percent_spin.value(),
             mz_decimals=self.mz_decimals_spin.value(),
             intensity=INTENSITY_MODES[self.intensity_combo.currentIndex()][0],
