@@ -114,16 +114,8 @@ class MassSpecPanel(QWidget):
         row.addWidget(QLabel("測定"))
         row.addWidget(self.run_combo, 1)
         outer.addLayout(row)
-        # 変換中だけ出す(数秒かかるので、何も出ないと止まったように見える)
-        self.progress_row = QWidget()
-        progress_layout = QHBoxLayout(self.progress_row)
-        progress_layout.setContentsMargins(0, 0, 0, 0)
-        self.progress_label = QLabel("")
-        progress_layout.addWidget(self.progress_label, 1)
-        progress_layout.addWidget(self.cancel_button)
-        self.progress_row.hide()
-        outer.addWidget(self.progress_row)
         self.last_status = ""
+
 
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setChildrenCollapsible(False)
@@ -170,6 +162,17 @@ class MassSpecPanel(QWidget):
         row.addStretch(1)
         pane_box_layout.addLayout(row)
         self.splitter.addWidget(pane_box)
+
+        # 変換中だけ右下に出す(数秒かかるので、何も出ないと止まったように見える)
+        self.progress_row = QWidget()
+        progress_layout = QHBoxLayout(self.progress_row)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.addStretch(1)
+        self.progress_label = QLabel("")
+        progress_layout.addWidget(self.progress_label)
+        progress_layout.addWidget(self.cancel_button)
+        self.progress_row.hide()
+        outer.addWidget(self.progress_row)
         self.splitter.setSizes([180, 260, 360])
 
     def _build_menus(self):
