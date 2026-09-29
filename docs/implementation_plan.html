@@ -136,7 +136,7 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px
   <header class="head">
     <div class="eyebrow">P-316 · graphica-plugin-mass-spec · Graphica プラグイン API 2.0</div>
     <h1>質量分析 (MS) パック 実装計画</h1>
-    <p>Bruker micrOTOF の測定(<code>.d</code>)を ProteoWizard の msconvert で自動的に mzML に変換して読み込み、TIC から時間範囲を選んだ平均スペクトルを作り、組成式から計算した同位体パターンを重ねて ppm 誤差を出すプラグインの計画です。仕様はユーザーと合意済みで、v1.0 の機能は実装済みです。実データでの測定結果は下の「実データで分かったこと」にあります。</p>
+    <p>Bruker micrOTOF の測定(<code>.d</code>)を ProteoWizard の msconvert で自動的に mzML に変換して読み込み、TIC から時間範囲を選んだ平均スペクトルを作り、組成式から計算した同位体パターンを重ねて ppm 誤差を出すプラグインの計画です。仕様はユーザーと合意済みで、v1.0 の機能は実装済みです。このページは 2026-09-28 時点の計画で、その後の画面の変更などの最新の仕様はリポジトリの CLAUDE.md にあります。実データでの測定結果は下の「実データで分かったこと」にあります。</p>
     <div class="facts">
       <span><b>状態</b> 実装済み・実機での確認待ち(テスト 108 件)</span>
       <span><b>使うフック</b> <code>register_importer</code> <code>register_panel</code> <code>register_analyzer</code> <code>register_plot_type</code> <code>register_menu_action</code></span>
@@ -150,7 +150,7 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px
       <thead><tr><th>項目</th><th>決定</th></tr></thead>
       <tbody>
         <tr><td class="k">読み込み<span class="new">変更</span></td><td>パネルで <code>.d</code> フォルダを選ぶと、プラグインが ProteoWizard の msconvert を別プロセスで実行して mzML に変換し(画面は止めない)、読み込む。変換した mzML はプラグインの保存フォルダにキャッシュし、同じ <code>.d</code> は2回目から変換しない。ProteoWizard は最初に1回インストールするだけで、測定ごとの手作業の変換は要らない。mzML を直接開くこともできる。mzML は XML・base64・zlib を標準ライブラリと numpy で解釈する(pyteomics は使わない)。</td></tr>
-        <tr><td class="k">操作画面</td><td>ドックパネル(タブごとに1つ、フロートすれば独立ウィンドウとしても使える)。複数の mzML を一覧に開いて切り替えられるので、正負のファイルを並べて比べられる。</td></tr>
+        <tr><td class="k">操作画面<span class="new">変更</span></td><td>独立したウィンドウ(MS ビューア)。プラグイン ▸ MS ビューアを開く で開き、左に開いた測定の一覧、右に TIC・スペクトル・比較の枠の3段。複数の測定を一覧に開いて比べられる。</td></tr>
         <tr><td class="k">時間範囲の選択</td><td>パネル内の TIC をドラッグして選び、開始・終了の数値欄と連動させる。</td></tr>
         <tr><td class="k">背景の差し引き</td><td>v1.0 に入れる。「試料」と「背景」の2つの時間範囲の平均の差を作る。負の値を 0 にするかを選べる。</td></tr>
         <tr><td class="k">ファイルを開く / ドロップ</td><td>importer は、スキャンが1つならそのスペクトル、複数なら TIC を返す。スペクトルの切り出しはパネルで行う。</td></tr>
@@ -300,7 +300,7 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px
         <tr><td class="k mono">spectra.py</td><td>時間範囲の平均、背景の差し引き、centroid(ピーク検出と重心)、FWHM、ラベルを付けるピークの選択、桁数に従った文字列</td><td>numpy</td></tr>
         <tr><td class="k mono">matching.py</td><td>計算パターンと実測の照合: ピークの対応づけ、ppm 誤差、相対強度、R の推定、強度合わせ、結果の表</td><td>numpy, pandas</td></tr>
         <tr><td class="k mono">plot_types.py</td><td>Stick の描画(<code>vlines</code>、線種「なし」なら描かない)</td><td>matplotlib</td></tr>
-        <tr><td class="k mono">panel.py / plots.py</td><td>ドックパネルと、マウス操作を持つ TIC・スペクトルのグラフ</td><td>PySide6, matplotlib</td></tr>
+        <tr><td class="k mono">panel.py / plots.py / windows.py</td><td>MS ビューアのウィンドウ、マウス操作を持つ TIC・スペクトル・枠のグラフ、照合・時間範囲・表示設定の別ウィンドウ</td><td>PySide6, matplotlib</td></tr>
         <tr><td class="k mono">__init__.py</td><td><code>register(api)</code> だけ</td><td>—</td></tr>
       </tbody>
     </table></div>
@@ -358,7 +358,7 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px
   <section>
     <h2>v1.0 に入れないもの</h2>
     <ul>
-      <li><code>.d</code> の直接読み込み(Bruker の baf2sql を ctypes で呼ぶ方法)。次の版の候補。</li>
+      <li>(2026-09-29 に方針を変更)<code>.d</code>(analysis.baf)は、Bruker のライブラリを使わずにプラグインが直接読む形で v1.0 に入れた。</li>
       <li>m/z からの組成式の推定(候補の列挙)、フラグメント解析。</li>
       <li>LC-MS の netCDF(ANDI-MS)。P-108 で扱う。</li>
       <li>ユーザーの測定データをテストデータとして公開リポジトリに入れること。テストは合成した mzML だけで行う。</li>

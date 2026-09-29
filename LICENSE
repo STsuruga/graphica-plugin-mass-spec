@@ -26,7 +26,10 @@ The isotope masses and abundances in mass_spec/isotopes.py come from NIST
 "Atomic Weights and Isotopic Compositions for All Elements", a work of the
 U.S. Government (public domain in the United States).
 
-This plugin does not include ProteoWizard or any vendor library. Converting
-Bruker .d data calls msconvert from a ProteoWizard installation that each user
-installs separately under ProteoWizard's own license and the vendor license
-terms they accept when downloading it.
+This plugin does not include ProteoWizard or any vendor library. It reads
+Bruker .d data (analysis.baf) itself and does not use, modify or decompile any
+Bruker program. For measurements it cannot read, it may call msconvert from a
+ProteoWizard installation that each user installs separately under
+ProteoWizard's own license and the vendor license terms they accept when
+downloading it. Bruker and micrOTOF are trademarks of Bruker; this plugin is
+not affiliated with or endorsed by Bruker.
