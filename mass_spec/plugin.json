@@ -1,6 +1,6 @@
 {
   "name": "Mass Spec Pack",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "api_version": "2.0",
   "author": "STsuruga",
   "description": "Bruker .d(analysis.baf)と mzML の読み込み、TIC・平均スペクトル、組成式からの同位体パターンの照合(P-316)",

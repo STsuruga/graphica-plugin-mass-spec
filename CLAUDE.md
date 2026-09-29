@@ -68,5 +68,6 @@ python scripts/build_zip.py --all      # dist/mass_spec-<version>.zip
 - テストの合成データ(tests/synthetic.py)はこの形に合わせてある。
 
 ## 現状
-- 2026-09-29: 機能は完成。Windows(仮想環境の graphica)と Mac の実機でユーザーが動作を確認。テスト 146 件。
-  .baf の直接読み込みを公開版に入れた。次は v1.0.0 のリリース(タグ・Release に zip・ハブの db・本体の進捗表・Wiki のプラグイン一覧)。
+- 2026-09-29: v1.0.0 をリリース(https://github.com/STsuruga/graphica-plugin-mass-spec/releases/tag/v1.0.0)。
+  Windows(仮想環境の graphica)と Mac の実機でユーザーが動作を確認。テスト 146 件、CI(windows-latest)通過。
+- 次: 未定。候補は m/z からの組成式の推定、フラグメント解析、ほかの Bruker 機種の .baf(圧縮方式が違えば msconvert に任せている)。
