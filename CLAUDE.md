@@ -20,7 +20,7 @@ Graphica(https://github.com/STsuruga/Graphica)用プラグイン P-316 質量分
   - 読み込み: .d(analysis.baf)を baf.py が直接読む(Win/Mac、Bruker のライブラリも ProteoWizard も不要)。
     圧縮方式が違う測定だけ、ProteoWizard の msconvert があれば QProcess で mzML に変換して ctx.data_dir にキャッシュ(convert.py)。
     mzML は mzml.py(標準ライブラリと numpy)。importer は .mzML と .baf(スキャンが1つならスペクトル、複数なら TIC)。
-  - MS ビューアは独立したウィンドウだけ(ドックでは使わない、ユーザー判断)。プラグイン ▸ MS ビューアを開く で開く。
+  - MS ビューアは独立したウィンドウだけ(ドックでは使わない、ユーザー判断)。≡ ▸ プラグイン ▸ MS ビューアを開く で開く。
     パネル(register_panel)は本体 2.6.0 から左端の帯の「プラグイン」ページ(幅 280px)に入る。ページには
     graphica.plugin.ui の節で「MS ビューアを開く」ボタンと、読み込んだ測定の数・選んでいる測定・時間範囲・照合を出す
     (v1.1.0。パネルはタブごとの ctx を持つ役目もある。ページを選んでもウィンドウは自動では開かない)。
@@ -46,7 +46,7 @@ python -m venv .venv                  # 初回だけ。Python 3.11 以上
 pip install "graphica-plot>=2.6,<3"   # 本体の未リリースの変更で試すときは pip install -e <PlotterApp>/Graphica_project
 pip install -r requirements-dev.txt
 pytest
-graphica                               # 本体を起動(zip は 編集 ▸ 環境設定 ▸ プラグイン から入れる)
+graphica                               # 本体を起動(zip は ⚙ ▸ 環境設定... ▸ プラグイン から入れる)
 python scripts/build_zip.py --all      # dist/mass_spec-<version>.zip
 
 ## ルール
@@ -74,4 +74,7 @@ python scripts/build_zip.py --all      # dist/mass_spec-<version>.zip
 ## 現状
 - 2026-09-29: v1.0.0 をリリース(https://github.com/STsuruga/graphica-plugin-mass-spec/releases/tag/v1.0.0)。
   Windows(仮想環境の graphica)と Mac の実機でユーザーが動作を確認。テスト 146 件、CI(windows-latest)通過。
+- 2026-10-24: v1.1.0 をリリース(https://github.com/STsuruga/graphica-plugin-mass-spec/releases/tag/v1.1.0)。
+  本体 2.6.0(プラグイン API 2.2)の「プラグイン」ページ向けのパネル、ビューアの色を本体のテーマから読む(明暗の切り替えにも付いてくる)。
+  本体 2.6.0 以上が必要。テスト 150 件、CI(windows-latest、PyPI の graphica-plot 2.6.0)通過。Windows の開発版の本体でライト・ダークの見た目を確認。
 - 次: 未定。候補は m/z からの組成式の推定、フラグメント解析、ほかの Bruker 機種の .baf(圧縮方式が違えば msconvert に任せている)。
