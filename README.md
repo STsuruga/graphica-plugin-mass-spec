@@ -1,6 +1,6 @@
 # graphica-plugin-mass-spec
 
-[Graphica](https://github.com/STsuruga/Graphica) 用の質量分析 (MS) パック(P-316)。Windows と macOS で動きます。
+[Graphica](https://github.com/STsuruga/Graphica) 用の質量分析 (MS) パック(P-316)。Windows と macOS で動きます。Graphica 2.6.0 以上が必要です。
 
 ## できること
 
@@ -16,6 +16,7 @@
 ## 使い方
 
 プラグイン ▸ **MS ビューアを開く** でウィンドウを開きます(クイックアクセスツールバーにピン留めするとボタン1つで開けます)。
+左端の帯の「プラグイン」ページの **MS スペクトル** にも開くボタンがあり、読み込んだ測定の数・選んでいる測定・時間範囲・照合の結果が出ます。
 ビューアの ファイル ▸ **.d を開く** で測定を開き、TIC をドラッグして時間範囲を選ぶと、2段目にその範囲の平均スペクトルが出ます。
 
 | 場所 | 操作 | 動作 |
@@ -61,7 +62,7 @@ Bruker micrOTOF(APCI、m/z 50〜3000)の測定3件で、ProteoWizard の msconve
 ```
 python -m venv .venv
 .venv\Scripts\activate
-pip install "graphica-plot>=2.0,<3"
+pip install "graphica-plot>=2.6,<3"
 pip install -r requirements-dev.txt
 pytest
 ```

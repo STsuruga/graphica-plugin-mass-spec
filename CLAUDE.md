@@ -20,8 +20,10 @@ Graphica(https://github.com/STsuruga/Graphica)用プラグイン P-316 質量分
   - 読み込み: .d(analysis.baf)を baf.py が直接読む(Win/Mac、Bruker のライブラリも ProteoWizard も不要)。
     圧縮方式が違う測定だけ、ProteoWizard の msconvert があれば QProcess で mzML に変換して ctx.data_dir にキャッシュ(convert.py)。
     mzML は mzml.py(標準ライブラリと numpy)。importer は .mzML と .baf(スキャンが1つならスペクトル、複数なら TIC)。
-  - MS ビューアは独立したウィンドウだけ(ドックでは使わない、ユーザー判断)。プラグイン ▸ MS ビューアを開く で開き、
-    パネル(register_panel)はタブごとの ctx を持つためだけに登録し、表示されたらドックを隠してウィンドウを出す。
+  - MS ビューアは独立したウィンドウだけ(ドックでは使わない、ユーザー判断)。プラグイン ▸ MS ビューアを開く で開く。
+    パネル(register_panel)は本体 2.6.0 から左端の帯の「プラグイン」ページ(幅 280px)に入る。ページには
+    graphica.plugin.ui の節で「MS ビューアを開く」ボタンと、読み込んだ測定の数・選んでいる測定・時間範囲・照合を出す
+    (v1.1.0。パネルはタブごとの ctx を持つ役目もある。ページを選んでもウィンドウは自動では開かない)。
     ウィンドウは WA_QuitOnClose を切る(開いたままでも本体を閉じたら終わる)。macOS ではメニューバーを setNativeMenuBar(False)。
   - 画面: メニューバー(ファイル・表示・解析・転送・ヘルプ)、左に測定の一覧(チェックで TIC、クリックで2段目の対象)、
     右に3段(TIC / 選んだ範囲の平均スペクトル / 比較の枠。枠は1つに1件、数と横軸の同期は3段目の下)。
@@ -41,7 +43,7 @@ Graphica(https://github.com/STsuruga/Graphica)用プラグイン P-316 質量分
 ## コマンド
 python -m venv .venv                  # 初回だけ。Python 3.11 以上
 .venv\Scripts\activate               # macOS / Linux は source .venv/bin/activate
-pip install "graphica-plot>=2.0,<3"   # 本体の未リリースの変更で試すときは pip install -e <PlotterApp>/Graphica_project
+pip install "graphica-plot>=2.6,<3"   # 本体の未リリースの変更で試すときは pip install -e <PlotterApp>/Graphica_project
 pip install -r requirements-dev.txt
 pytest
 graphica                               # 本体を起動(zip は 編集 ▸ 環境設定 ▸ プラグイン から入れる)
@@ -54,6 +56,8 @@ python scripts/build_zip.py --all      # dist/mass_spec-<version>.zip
 - プラグイン内は相対 import。他プラグインは import できない。
 - 受け取った Dataset は書き換えない。新しい Dataset は name / df / x_col_name / y_col_name 必須。
 - 本体から import するのは graphica.plugin / graphica.plugin.testing だけ。本体の操作は窓口 ctx(PluginContext)で行う。
+  画面の部品と色は graphica.plugin.ui(API 2.2、plugin.json の api_version は "2.2")。Qt を読むので、使う関数の中で import する
+  (plots.py の theme_color は本体が無いテストのために直書きの色に戻る)。
 - ctx の呼び出しは GUI スレッドだけ(msconvert の完了通知は QProcess のシグナルで GUI スレッドに戻る)。
 - リリースしたら plugin.json の version とタグを揃え、ハブの db(collection "plugins", doc_id "P-316")を更新する。
 

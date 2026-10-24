@@ -1,7 +1,7 @@
 # tests/conftest.py
 """テスト共通のフィクスチャ。
 
-Graphica 本体(pip install "graphica-plot>=2.0,<3")が無い環境では、本体に依存しない
+Graphica 本体(pip install "graphica-plot>=2.6,<3")が無い環境では、本体に依存しない
 計算のテストだけが走り、配線・読み込みのテストは skip される。
 """
 import os
@@ -24,7 +24,7 @@ except ImportError:
 
 requires_graphica = pytest.mark.skipif(
     not GRAPHICA_AVAILABLE,
-    reason="Graphica 本体が未インストールです(pip install \"graphica-plot>=2.0,<3\")",
+    reason="Graphica 本体が未インストールです(pip install \"graphica-plot>=2.6,<3\")",
 )
 
 
