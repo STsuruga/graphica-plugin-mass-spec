@@ -433,22 +433,61 @@ def test_open_menu_opens_this_tabs_viewer_as_a_window(tmp_path):
     other.close()
 
 
-def test_showing_the_panel_hides_the_dock_and_opens_the_window(ctx):
-    from PySide6.QtWidgets import QDockWidget, QMainWindow
-
-    from mass_spec.panel import MassSpecPanel
-    main = QMainWindow()
-    dock = QDockWidget("MS スペクトル", main)
-    viewer = MassSpecPanel(ctx)
-    dock.setWidget(viewer)
-    main.show()
-    dock.show()
+def test_showing_the_panel_does_not_open_the_window(panel):
+    # パネルは左端の帯の「プラグイン」ページに入る。ページを選んだだけではウィンドウを出さない
+    panel.show()
     for _ in range(5):
         QApplication.processEvents()
-    assert not dock.isVisible()
-    assert viewer.window_.isVisible()
-    viewer.close()
-    main.close()
+    assert panel.isVisible() and not panel.window_.isVisible()
+    panel.open_button.click()
+    assert panel.window_.isVisible()
+
+
+def test_page_fits_the_plugin_page_width(panel, mzml):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+    page = QWidget()
+    page.setFixedWidth(280)      # 本体の「プラグイン」ページの幅
+    QVBoxLayout(page).addWidget(panel)
+    run = panel.open_mzml(mzml)
+    run.display_name = "a_very_long_measurement_name_without_any_spaces_20261024_negative_mode_001"
+    panel._refresh_page()
+    page.show()
+    for _ in range(5):
+        QApplication.processEvents()
+    assert panel.width() <= 280
+    assert panel.page_current.full_text() == run.display_name
+    assert "…" in panel.page_current.text() and panel.page_current.width() <= panel.width()
+    assert panel.open_button.width() <= panel.width()
+    page.close()
+
+
+def test_page_summarizes_the_viewer(panel, mzml):
+    form = panel.page_form
+    assert panel.page_runs.text().startswith("なし")
+    assert not form.isRowVisible(panel.page_current) and not form.isRowVisible(panel.page_calc)
+    panel.open_mzml(mzml)
+    assert panel.page_runs.text() == "1 件" and panel.page_current.full_text() == "sample"
+    assert form.isRowVisible(panel.page_current) and "正イオン" in panel.page_current.toolTip()
+    assert panel.page_range.text().startswith("未選択")
+    panel._on_tic_range_changed("sample", 3 / 60, 6 / 60)
+    assert panel.page_range.text() == "0.05–0.10 min、4 スキャン"
+    assert panel.page_calc.full_text() == "—"
+    _calculate(panel)
+    assert panel.page_calc.full_text().startswith("C6H12O6  一致 ") and panel.page_calc.full_text().endswith("/5")
+    panel.open_mzml(mzml, display_name="second")
+    assert panel.page_runs.text() == "2 件" and panel.page_runs.toolTip() == "sample\nsecond"
+    panel.close_current_run()
+    panel.close_current_run()
+    assert panel.page_runs.text().startswith("なし") and not form.isRowVisible(panel.page_range)
+
+
+def test_transfers_are_announced_with_a_toast(panel, mzml, monkeypatch):
+    from graphica.plugin import ui
+    shown = []
+    monkeypatch.setattr(ui, "show_toast", lambda widget, text: shown.append((widget, text)))
+    _open_all(panel, mzml)
+    panel.transfer_tic()
+    assert shown and shown[-1][1].startswith("プロットに追加しました: ") and shown[-1][0] is not None
 
 def test_open_d_reads_baf_directly_without_msconvert(panel, ctx, tmp_path):
     from synthetic_baf import peaks_profile, write_baf_d
@@ -514,3 +553,4 @@ def test_transferred_centroid_labels_only_signal_heads(panel, ctx, tmp_path):
 
 def test_menu_bar_stays_inside_the_viewer_window(panel):
     assert not panel.menu_bar.isNativeMenuBar()
+

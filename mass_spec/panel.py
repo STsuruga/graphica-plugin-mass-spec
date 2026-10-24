@@ -1,5 +1,6 @@
-"""MS ビューア(ドックパネル「MS スペクトル」)。
+"""MS ビューアと、左端の帯の「プラグイン」ページに出すパネル「MS スペクトル」。
 
+パネル(幅 280px)には「MS ビューアを開く」と、読み込んだ測定などの短い説明だけを置く。ビューアは別のウィンドウで、
 上端にメニューバー、左に開いた測定の一覧(チェックで TIC の表示、クリックで2段目の対象)、右に3段:
 TIC(1段目)、選んだ時間範囲のスペクトル(2段目)、実測のコピーや計算パターンを1つずつ置く枠(3段目)。
 照合・時間範囲・表示設定はメニューから別ウィンドウで開く(windows.py)。
@@ -15,8 +16,8 @@ from matplotlib.colors import to_hex
 from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QDockWidget, QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMenuBar, QMessageBox,
-    QPushButton, QScrollArea, QSplitter, QSplitterHandle, QSpinBox, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMenuBar,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter, QSplitterHandle, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import convert
@@ -100,6 +101,34 @@ class ThinSplitter(QSplitter):
 
     def createHandle(self):
         return ThinHandle(self.orientation(), self)
+
+
+class ElidedLabel(QLabel):
+    """幅に入らない文字を真ん中で省いて「…」にするラベル(測定名は空白のない長い名前が多く、折り返せない)。
+    全文はツールチップに出す。"""
+
+    def __init__(self, text=""):
+        super().__init__()
+        self._full = ""
+        # 長い名前でパネルの幅(280px)を押し広げない
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(20)
+        self.set_full_text(text)
+
+    def set_full_text(self, text, tooltip=None):
+        self._full = text
+        self.setToolTip(tooltip if tooltip is not None else text)
+        self._elide()
+
+    def full_text(self):
+        return self._full
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self):
+        self.setText(self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, max(self.width(), 20)))
 
 
 class ViewerWindow(QWidget):
@@ -196,23 +225,73 @@ class MassSpecPanel(QWidget):
         self.range_window = RangeWindow(self)
         self._apply_label_settings()
         self.set_pane_count(self.settings["pane_count"])
+        self._refresh_page()
         _VIEWERS.add(self)
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        # ビューアはウィンドウだけで使う。本体がこのパネルのドックを表示したら、ドックは隠してウィンドウを開く
-        # (プラグインがタブごとの ctx を持てるのはパネルだけなので、パネル自体は登録しておく)
-        QTimer.singleShot(0, self._show_window_instead_of_dock)
+    # ================================================================ プラグインのページ
+    def _build_page(self):
+        """左端の帯の「プラグイン」ページ(幅 280px)の中身。本体のインスペクタと同じ節で、ビューアを開くボタンと
+        今の状態だけを置く(プラグインがタブごとの ctx を持てるのはパネルだけなので、ビューアはパネルが持つ)。"""
+        from graphica.plugin import ui
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 0, 12, 8)
+        layout.setSpacing(0)
 
-    def _show_window_instead_of_dock(self):
-        dock = self.parentWidget()
-        if isinstance(dock, QDockWidget):
-            dock.hide()
-        self.open_window()
+        box, form = ui.section("MS ビューア")
+        intro = QLabel("TIC とスペクトルの表示、同位体パターンの照合は別のウィンドウで行います。")
+        intro.setWordWrap(True)
+        form.addRow(intro)
+        self.open_button = QPushButton("MS ビューアを開く")
+        self.open_button.clicked.connect(self.open_window)
+        form.addRow(self.open_button)
+        layout.addWidget(box)
+
+        box, self.page_form = ui.section("読み込んだ測定")
+        self.page_runs = QLabel()
+        self.page_runs.setWordWrap(True)
+        self.page_current = ElidedLabel()
+        self.page_range = QLabel()
+        self.page_range.setWordWrap(True)
+        self.page_calc = ElidedLabel()
+        self.page_form.addRow("測定", self.page_runs)
+        self.page_form.addRow("選択中", self.page_current)
+        self.page_form.addRow("範囲", self.page_range)
+        self.page_form.addRow("照合", self.page_calc)
+        layout.addWidget(box)
+        layout.addStretch(1)
+
+    def _refresh_page(self):
+        """ページの説明(測定の数・選んでいる測定・時間範囲・照合)をビューアの今の状態に合わせる。"""
+        runs = f"{len(self.runs)} 件" if self.runs else "なし(ビューアの ファイル ▸ .d を開く)"
+        if self._pending:
+            runs += f"、{self._pending[2]} を変換中…"
+        self.page_runs.setText(runs)
+        self.page_runs.setToolTip("\n".join(self._run_name(r) for r in self.runs))
+        run = self.current_run()
+        for row in (self.page_current, self.page_range, self.page_calc):
+            self.page_form.setRowVisible(row, run is not None)
+        if run is None:
+            return
+        self.page_current.set_full_text(
+            self._run_name(run), f"{run.path}\n{self._polarity_text(run)}、{len(run.ms1_scans())} スキャン")
+        sample = self.ranges.get(run.path, {}).get("sample")
+        if sample is None:
+            self.page_range.setText("未選択(TIC をドラッグ)")
+        else:
+            self.page_range.setText(f"{range_text(*sample)}、{len(run.scans_in_range(*sample))} スキャン")
+        if self.calc is None:
+            self.page_calc.set_full_text("—", "ビューアの 解析 ▸ 同位体パターンの照合")
+        elif self.spectrum is None:
+            self.page_calc.set_full_text(f"{self.calc['formula']}(計算のみ)")
+        else:
+            found, total = len(self._found_results()), len(self.calc["adducts"])
+            self.page_calc.set_full_text(f"{self.calc['formula']}  一致 {found}/{total}",
+                                         f"{self.calc['formula']}: 付加イオン {total} 件のうち {found} 件が実測に見つかりました")
 
     # ================================================================ 画面
     def _build(self):
-        # 中身はすべてビューアのウィンドウに置く。パネル(ドック側)は空のまま
+        self._build_page()
+        # ビューアの中身はすべて別のウィンドウに置く
         self.window_ = ViewerWindow(self)
         self.content = QWidget()
         self.window_.layout().addWidget(self.content)
@@ -539,6 +618,7 @@ class MassSpecPanel(QWidget):
         self.run_list.blockSignals(False)
         self.run_list.setCurrentRow(len(self.runs) - 1)
         self._status(f"{self._run_name(run)} を読み込みました({elapsed:.1f} 秒)")
+        self._refresh_page()
         return run
 
     @staticmethod
@@ -634,6 +714,7 @@ class MassSpecPanel(QWidget):
         self.cancel_button.setVisible(converting)
         self.cancel_action.setEnabled(converting)
         self.open_d_action.setEnabled(not converting)
+        self._refresh_page()
 
     def _show_conversion_progress(self):
         if self._pending:
@@ -706,6 +787,7 @@ class MassSpecPanel(QWidget):
             self.spectrum = None
             self.spectrum_header.set_title("スペクトル")
             self._status("測定を開いてください")
+            self._refresh_page()
 
     # ================================================================ 範囲とスペクトル
     def current_run(self):
@@ -801,6 +883,10 @@ class MassSpecPanel(QWidget):
 
     def compute_spectrum(self, keep_view=True):
         """試料の範囲の平均(背景を引く設定なら背景の平均を引く)を作り、2段目に表示する。"""
+        self._compute_spectrum(keep_view)
+        self._refresh_page()
+
+    def _compute_spectrum(self, keep_view):
         self._recompute_timer.stop()
         run = self.current_run()
         if run is None:
@@ -891,6 +977,7 @@ class MassSpecPanel(QWidget):
             f"{format_formula(counts)}  モノアイソトピック質量 {monoisotopic_mass(counts):.{self.settings['mz_decimals']}f}"
             f"  平均分子量 {average_mass(counts):.4f}\n{target}")
         self._show_calc_table()
+        self._refresh_page()
 
     def _overlay_colors(self):
         cycle = self.ctx.active_color_cycle() or ["#d62728"]
@@ -977,6 +1064,9 @@ class MassSpecPanel(QWidget):
         dataset.subplot_target = self.settings["subplot_target"]
         self.ctx.add_dataset(dataset, description=f"[MS] {what}を追加")
         self._status(f"追加しました: {dataset.name}")
+        # 状態の行は置いていないので、転送したことは知らせで伝える(照合のウィンドウから送ったときはそちらに出す)
+        from graphica.plugin import ui
+        ui.show_toast(QApplication.activeWindow() or self.window_, f"プロットに追加しました: {dataset.name}")
 
     def transfer_tic(self):
         run = self.current_run()

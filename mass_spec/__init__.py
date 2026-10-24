@@ -12,8 +12,8 @@ def _open_viewer(ctx):
     from .panel import viewer_for
     viewer = viewer_for(ctx)
     if viewer is None:
-        ctx.show_error("このタブの MS ビューアが見つかりません。プラグイン ▸ パネル ▸ MS スペクトル から開いてください。",
-                       "MS パック")
+        ctx.show_error("このタブの MS ビューアが見つかりません。左端の帯の「プラグイン」ページの MS スペクトル から"
+                       "開いてください。", "MS パック")
         return
     viewer.open_window()
 
