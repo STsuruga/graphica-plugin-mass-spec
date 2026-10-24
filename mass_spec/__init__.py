@@ -20,8 +20,9 @@ def _open_viewer(ctx):
 
 def _show_help(ctx):
     from .panel import HELP_TEXT
-    ctx.show_message(f"プラグイン ▸ {OPEN_MENU} で MS ビューアのウィンドウを開きます"
-                     "(クイックアクセスツールバーにピン留めするとボタンから開けます)。\n\n" + HELP_TEXT, "MS パック")
+    ctx.show_message(f"≡ ▸ プラグイン ▸ {OPEN_MENU} か、左端の帯の「プラグイン」ページの {PANEL_NAME} から"
+                     "MS ビューアのウィンドウを開きます(メニューの項目を右クリックして ★ にピン留めすると、"
+                     "★ からすぐ開けます)。\n\n" + HELP_TEXT, "MS パック")
 
 
 def _create_panel(ctx):
