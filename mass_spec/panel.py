@@ -13,7 +13,7 @@ import weakref
 import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import to_hex
-from PySide6.QtCore import QProcess, Qt, QTimer
+from PySide6.QtCore import QEvent, QProcess, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMenuBar,
@@ -31,7 +31,7 @@ from .datasets import (
 from .baf import BafUnsupported, is_baf_folder, read_baf
 from .matching import match_all
 from .mzml import MzmlError, read_mzml
-from .plots import PanePlot, SpectrumPlot, TicPlot
+from .plots import PanePlot, SpectrumPlot, TicPlot, theme_color
 from .settings import load_settings, save_settings
 from .spectra import LabelFormat, average_spectrum, compact_zeros, find_peaks, subtract_background
 from .windows import CalcWindow, RangeWindow, SettingsWindow
@@ -47,7 +47,8 @@ RUN_COLORS = [to_hex(c) for c in colormaps["tab10"].colors]
 
 
 class TitleLabel(QLabel):
-    """各段の題名。段の名前を太字、測定名などを薄い色で続け、下に細い線を引く。色は本体のテーマのパレットから取る。"""
+    """各段の題名。段の名前を太字、測定名などを薄い色で続け、下に細い線を引く。色は本体のテーマから取り、
+    明暗を替えたら付け直す。"""
 
     def __init__(self, title):
         super().__init__()
@@ -56,9 +57,15 @@ class TitleLabel(QLabel):
                            " border-bottom: 1px solid palette(midlight); }")
         self.set_title(title)
 
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "_args"):
+            self.set_title(*self._args)
+
     def set_title(self, title, detail="", dot_color=None):
+        self._args = (title, detail, dot_color)
         self.plain = f"{title} - {detail}" if detail else title
-        muted = self.palette().color(QPalette.ColorRole.PlaceholderText).name()
+        muted = theme_color("text_muted", self.palette().color(QPalette.ColorRole.PlaceholderText).name())
         dot = f'<span style="color:{dot_color}">●</span>&nbsp;' if dot_color else ""
         rest = f'&nbsp;&nbsp;<span style="color:{muted}">{html.escape(detail)}</span>' if detail else ""
         self.setText(f'{dot}<span style="font-weight:500">{html.escape(title)}</span>{rest}')

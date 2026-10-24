@@ -554,3 +554,21 @@ def test_transferred_centroid_labels_only_signal_heads(panel, ctx, tmp_path):
 def test_menu_bar_stays_inside_the_viewer_window(panel):
     assert not panel.menu_bar.isNativeMenuBar()
 
+
+def test_viewer_follows_the_theme(panel, mzml, monkeypatch):
+    """本体で明暗を替えると(パレットが替わる知らせが届くと)、グラフと題名の色を今のテーマに合わせ直す。"""
+    from matplotlib.colors import to_hex
+    from PySide6.QtCore import QEvent
+
+    from graphica.plugin import ui
+    _open_all(panel, mzml)
+    dark = {"surface": "#181B1F", "text_primary": "#E6E9EC", "text_muted": "#69737B", "accent": "#5FB6BE",
+            "text_secondary": "#A0A9B1"}
+    monkeypatch.setattr(ui, "theme_color", lambda name: dark[name])
+    for widget in (panel.tic_plot, panel.spectrum_plot, panel.tic_header):
+        QApplication.sendEvent(widget, QEvent(QEvent.Type.PaletteChange))
+    assert panel.tic_plot.foreground == "#e6e9ec"
+    assert to_hex(panel.spectrum_plot.figure.get_facecolor()) == "#181b1f"
+    assert to_hex(panel.spectrum_plot._line.get_color()) == "#e6e9ec"
+    assert to_hex(panel.tic_plot._patches["sample"].get_facecolor()) == "#5fb6be"
+    assert "#69737b" in panel.tic_header.text()

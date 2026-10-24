@@ -9,7 +9,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.colors import to_hex
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QCursor, QPalette
 
 from .spectra import LabelFormat, Peak, cluster_heads, select_label_peaks
@@ -22,8 +22,32 @@ ISOTOPE_SPACING = 1.00335
 # 本体はグラフの文字ごとにこの候補を渡している(matplotlib 全体の設定は変えていない)。日本語を含む文字に使う
 JP_FONTS = ["DejaVu Sans", "Yu Gothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Meiryo", "MS Gothic",
             "Noto Sans CJK JP"]
-HIGHLIGHT = "#2563EB"
-MEASURE_COLOR = "#1F6F78"
+
+
+def theme_color(name, fallback):
+    """本体のテーマの色(graphica.plugin.ui、API 2.2)。テーマを替えても合うよう、描くたびに読む。
+    本体が無いとき(計算とグラフだけのテスト)と、matplotlib が読めない rgba(...) の色は fallback。"""
+    try:
+        from graphica.plugin import ui
+        color = ui.theme_color(name)
+    except (ImportError, ValueError):
+        return fallback
+    return to_hex(color) if color.startswith("#") else fallback
+
+
+def highlight_color():
+    """試料の範囲・拡大の帯。"""
+    return theme_color("accent", "#2563EB")
+
+
+def measure_color():
+    """Δm/z の測定の線(拡大の帯と見分けるため、テーマカラーとは別の色)。"""
+    return theme_color("text_secondary", "#56606A")
+
+
+def background_color():
+    """背景の範囲の帯。"""
+    return theme_color("text_muted", "#8A939B")
 
 
 def _qcolor_hex(color):
@@ -59,11 +83,29 @@ class InteractivePlot(FigureCanvasQTAgg):
         self.apply_palette()
 
     # ---- 見た目
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        # 本体で明暗やテーマカラーを替えたとき。作っている途中(軸がまだ無い)にも届くので、そのときは何もしない
+        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "foreground"):
+            self.retheme()
+
+    def retheme(self):
+        """描いてあるものの色を今のテーマに合わせ直す。色を決めずに前景色で描いた線と文字は新しい前景色にする。"""
+        old = self.foreground
+        self.apply_palette()
+        if old == self.foreground:
+            return
+        for artist in [*self.ax.lines, *self.ax.texts]:
+            if to_hex(artist.get_color()) == old:
+                artist.set_color(self.foreground)
+        self.ax.yaxis.get_offset_text().set_color(self.foreground)
+        self.draw_idle()
+
     def apply_palette(self):
-        """本体のテーマ(Qt のパレット)に合わせる。"""
+        """本体のテーマに合わせる。matplotlib のキャンバスは白いパレットを自分で持つので、パレットは本体が無いときだけ使う。"""
         pal = self.palette()
-        bg = _qcolor_hex(pal.color(QPalette.ColorRole.Base))
-        fg = _qcolor_hex(pal.color(QPalette.ColorRole.Text))
+        bg = theme_color("surface", _qcolor_hex(pal.color(QPalette.ColorRole.Base)))
+        fg = theme_color("text_primary", _qcolor_hex(pal.color(QPalette.ColorRole.Text)))
         self.figure.set_facecolor(bg)
         self.ax.set_facecolor(bg)
         for spine in self.ax.spines.values():
@@ -261,9 +303,6 @@ class TicPlot(InteractivePlot):
     range_changed = Signal(str, float, float)    # ドラッグを終えたとき
     scan_clicked = Signal(float)
 
-    SAMPLE_COLOR = HIGHLIGHT
-    BACKGROUND_COLOR = "#7A837F"
-
     def __init__(self, parent=None):
         super().__init__(1.5, parent)
         self.ranges = {"sample": None, "background": None}
@@ -319,6 +358,14 @@ class TicPlot(InteractivePlot):
         self._draw_range(kind)
         self.draw_idle()
 
+    def retheme(self):
+        super().retheme()
+        for kind in ("sample", "background"):
+            self._draw_range(kind)
+        if self._scan_marker is not None:
+            self._scan_marker.set_color(highlight_color())
+        self.draw_idle()
+
     def _draw_range(self, kind):
         old = self._patches.pop(kind, None)
         if old is not None:
@@ -326,7 +373,7 @@ class TicPlot(InteractivePlot):
         r = self.ranges[kind]
         if r is None:
             return
-        color = self.SAMPLE_COLOR if kind == "sample" else self.BACKGROUND_COLOR
+        color = highlight_color() if kind == "sample" else background_color()
         self._patches[kind] = self.ax.axvspan(r[0], r[1], color=color, alpha=0.18, linewidth=0)
 
     def mark_scan(self, t):
@@ -334,7 +381,7 @@ class TicPlot(InteractivePlot):
             self._scan_marker.remove()
             self._scan_marker = None
         if t is not None:
-            self._scan_marker = self.ax.axvline(t, color=self.SAMPLE_COLOR, linewidth=0.8, linestyle=":")
+            self._scan_marker = self.ax.axvline(t, color=highlight_color(), linewidth=0.8, linestyle=":")
         self.draw_idle()
 
     def _hit(self, event):
@@ -585,13 +632,14 @@ class SpectrumPlot(InteractivePlot):
         d["moved"] = True
         self._clear_drag_artist()
         if d["mode"] == "zoom":
-            self._drag_artist = self.ax.axvspan(d["xd"], event.xdata, color=HIGHLIGHT, alpha=0.15, linewidth=0)
+            self._drag_artist = self.ax.axvspan(d["xd"], event.xdata, color=highlight_color(), alpha=0.15,
+                                                linewidth=0)
         elif d["mode"] == "box":
             self._drag_artist = self.ax.add_patch(Rectangle(
                 (min(d["xd"], event.xdata), min(d["yd"], event.ydata)), abs(event.xdata - d["xd"]),
-                abs(event.ydata - d["yd"]), fill=False, edgecolor=HIGHLIGHT, linewidth=1.0))
+                abs(event.ydata - d["yd"]), fill=False, edgecolor=highlight_color(), linewidth=1.0))
         else:
-            (self._drag_artist,) = self.ax.plot([d["xd"], event.xdata], [d["yd"], d["yd"]], color=MEASURE_COLOR,
+            (self._drag_artist,) = self.ax.plot([d["xd"], event.xdata], [d["yd"], d["yd"]], color=measure_color(),
                                                 linewidth=1.0)
             self.hover_text.emit(self.measure_text(d["xd"], event.xdata))
         self.draw_idle()
@@ -638,9 +686,9 @@ class SpectrumPlot(InteractivePlot):
         for artist in self._measure_artists:
             artist.remove()
         text = self.measure_text(xa, xb)
-        (line,) = self.ax.plot([xa, xb], [y, y], color=MEASURE_COLOR, linewidth=1.0, marker="|", markersize=8)
+        (line,) = self.ax.plot([xa, xb], [y, y], color=measure_color(), linewidth=1.0, marker="|", markersize=8)
         label = self.ax.annotate(text, ((xa + xb) / 2, y), textcoords="offset points", xytext=(0, 4),
-                                 ha="center", fontsize=7.5, color=MEASURE_COLOR)
+                                 ha="center", fontsize=7.5, color=measure_color())
         self._measure_artists = [line, label]
         self.measured.emit(text)
 
